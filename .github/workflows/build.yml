@@ -68,8 +68,15 @@ jobs:
           sudo apt-get install -y -qq poppler-utils > /dev/null
           mkdir -p test-previews
           for pdf in florilegium.pdf florilegium-grow.pdf showcase.pdf spread.pdf \
-                     specimen.pdf specimen-geometric.pdf ornaments.pdf regions.pdf; do
+                     specimen.pdf specimen-geometric.pdf ornaments.pdf; do
             pdftoppm -f 1 -l 1 -singlefile -png -scale-to 900 "$pdf" "test-previews/${pdf%.pdf}"
+          done
+          region_cases=(single-rectangle disjoint-rectangles overlapping-rectangles \
+                        single-polygon disjoint-polygons overlapping-polygons)
+          for i in "${!region_cases[@]}"; do
+            page=$((i + 1))
+            pdftoppm -f "$page" -l "$page" -singlefile -png -scale-to 900 \
+              regions.pdf "test-previews/regions-${region_cases[$i]}"
           done
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

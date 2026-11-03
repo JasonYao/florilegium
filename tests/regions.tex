@@ -11,6 +11,7 @@
     { {}, 100 },
     { { { 4, 4, 6, 6 } }, 96 },
     { { { 2, 2, 4, 5 }, { 6, 3, 8, 7 } }, 86 },
+    { { { 2, 2, 6, 6 }, { 4, 4, 8, 8 } }, 72 },
   }
   for _, case in ipairs(cases) do
     local regions = growth.subtract_regions(base, case[1])
@@ -40,6 +41,10 @@
   assert(not growth.in_regions(polygon_regions, 6, 3), "polygon mask did not exclude its horizontal arm")
   assert(not growth.in_regions(polygon_regions, 4, 5), "polygon mask boundary should be excluded")
   assert(growth.in_regions(polygon_regions, 5, 5), "concave polygon mask excluded its open notch")
+  local disjoint_polygon = { { 7, 7 }, { 9, 7 }, { 9, 9 }, { 7, 9 } }
+  local disjoint_polygon_regions = growth.subtract_regions(polygon_regions, { disjoint_polygon })
+  assert(not growth.in_regions(disjoint_polygon_regions, 8, 8), "disjoint polygon mask was not excluded")
+  assert(growth.in_regions(disjoint_polygon_regions, 9.5, 9.5), "disjoint polygon mask excluded unrelated space")
   local overlap = { { 4, 4 }, { 7, 4 }, { 7, 7 }, { 4, 7 } }
   local overlapping_regions = growth.subtract_regions(polygon_regions, { overlap })
   assert(not growth.in_regions(overlapping_regions, 5, 5), "intersecting polygon masks should exclude their union")
@@ -51,23 +56,46 @@
   end
 
   local test_masks = {}
+  local function rectangle(cx, cy, hw, hh)
+    return { cx - hw, cy - hh, cx + hw, cy + hh }
+  end
+  local function octagon(cx, cy, rx, ry)
+    return {
+      { cx - 0.65 * rx, cy - ry }, { cx + 0.65 * rx, cy - ry },
+      { cx + rx, cy - 0.55 * ry }, { cx + rx, cy + 0.55 * ry },
+      { cx + 0.65 * rx, cy + ry }, { cx - 0.65 * rx, cy + ry },
+      { cx - rx, cy + 0.55 * ry }, { cx - rx, cy - 0.55 * ry },
+    }
+  end
   florilegium_test_case = 1
   growth.regions = function(g, layout)
     g.colright = g.pw - 0.3
     local row = { 0.3, 0.3, g.pw - 0.3, g.ph - 0.3 }
+    local center = g.pw - (0.75 + 0.17 * (g.pw - 3.0))
     local masks = {}
-    if florilegium_test_case == 2 then
-      local center = g.pw - (0.75 + 0.17 * (g.pw - 3.0))
-      masks = { { center - 1.575, 1.3, center + 1.575, 4.45 } }
-    elseif florilegium_test_case == 3 then
-      local center = g.pw - (0.75 + 0.17 * (g.pw - 3.0))
+    if florilegium_test_case == 1 then
+      masks = { rectangle(center, 2.875, 1.575, 1.575) }
+    elseif florilegium_test_case == 2 then
       masks = {
-        { 1.2, g.ph - 4.5, g.pw - 1.2, g.ph - 0.9 },
-        {
-          { center - 1.575, 2.0 }, { center - 1.0, 1.3 }, { center + 1.0, 1.3 },
-          { center + 1.575, 2.0 }, { center + 1.575, 3.8 }, { center + 0.8, 4.45 },
-          { center - 0.8, 4.45 }, { center - 1.575, 3.8 },
-        },
+        rectangle(center - 1.1, 2.875, 0.7, 1.45),
+        rectangle(center + 1.1, 2.875, 0.7, 1.45),
+      }
+    elseif florilegium_test_case == 3 then
+      masks = {
+        rectangle(center - 0.65, 2.875, 1.1, 1.45),
+        rectangle(center + 0.65, 2.875, 1.1, 1.45),
+      }
+    elseif florilegium_test_case == 4 then
+      masks = { octagon(center, 2.875, 1.575, 1.575) }
+    elseif florilegium_test_case == 5 then
+      masks = {
+        octagon(center - 1.1, 2.875, 0.75, 1.3),
+        octagon(center + 1.1, 2.875, 0.75, 1.3),
+      }
+    elseif florilegium_test_case == 6 then
+      masks = {
+        octagon(center - 0.65, 2.875, 1.1, 1.45),
+        octagon(center + 0.65, 2.875, 1.1, 1.45),
       }
     end
     test_masks = masks
@@ -90,11 +118,15 @@
 }
 
 \begin{document}
-\noindent Rectangle: full allowed region
+\noindent Single rectangular mask
 \newpage
-\directlua{florilegium_test_case = 2}
-\noindent Rectangle with one masked region
+\directlua{florilegium_test_case = 2}\noindent Two disjoint rectangular masks
 \newpage
-\directlua{florilegium_test_case = 3}
-\noindent Multiple masked regions, including a polygon
+\directlua{florilegium_test_case = 3}\noindent Two overlapping rectangular masks
+\newpage
+\directlua{florilegium_test_case = 4}\noindent Single polygon mask
+\newpage
+\directlua{florilegium_test_case = 5}\noindent Two disjoint polygon masks
+\newpage
+\directlua{florilegium_test_case = 6}\noindent Two overlapping polygon masks
 \end{document}

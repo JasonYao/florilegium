@@ -53,7 +53,7 @@ fi
 table='| PDF output | Inline preview |'
 table+=$'\n| --- | --- |'
 preview_count=0
-for name in florilegium florilegium-grow showcase spread specimen specimen-geometric ornaments regions; do
+for name in florilegium florilegium-grow showcase spread specimen specimen-geometric ornaments; do
   preview="${TEST_RESULTS_DIR}/test-previews/${name}.png"
   if [[ -f "${preview}" ]]; then
     if preview_url="$(upload_attachment "${preview}")"; then
@@ -62,6 +62,19 @@ for name in florilegium florilegium-grow showcase spread specimen specimen-geome
       image="Preview upload failed"
     fi
     table+=$'\n'"| ${name}.pdf | ${image} |"
+    preview_count=$((preview_count + 1))
+  fi
+done
+for name in single-rectangle disjoint-rectangles overlapping-rectangles \
+            single-polygon disjoint-polygons overlapping-polygons; do
+  preview="${TEST_RESULTS_DIR}/test-previews/regions-${name}.png"
+  if [[ -f "${preview}" ]]; then
+    if preview_url="$(upload_attachment "${preview}")"; then
+      image="![regions-${name}](${preview_url})"
+    else
+      image="Preview upload failed"
+    fi
+    table+=$'\n'"| regions.pdf — ${name} | ${image} |"
     preview_count=$((preview_count + 1))
   fi
 done
