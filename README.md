@@ -335,6 +335,7 @@ make gallery                # gallery/seeds.png + seeds.gif, inks.png, seasons.p
 make grow-6                 # growth animation of seed 6 -> build/grow-6.gif + .mp4 (ffmpeg)
 make grow-6 EXPLAIN=1       # the same with the free discs marked -> build/grow-6-explain.*
 make svg SEED=7             # the same page as SVG, without TeX -> build/svg-7.svg
+make regioncheck            # region-subtraction assertions and three masked pages
 make playground             # the browser playground at http://localhost:8000/web/
 ```
 
@@ -416,6 +417,8 @@ point; the branch becomes a stem in turn. Big holes are taken first, so flowers 
 land early, sprays and leaves fill the middle, and the loop ends by tucking leaflets, buds
 and florets onto the stems. The end of the text is measured with `\pagetotal` in the same
 pass, so a short last page grows branches into the space below it with one compilation.
+For custom layouts, `require("florilegium-grow")` also exposes `subtract_regions(rects, masks)`
+and `in_regions(rects, x, y)` for unions of rectangular regions.
 
 **Reading the page** (`florilegium.lua`). A heading or `\florilegiumbloom` leaves an
 invisible marker node in the text. When the page is shipped out, its box is walked node by

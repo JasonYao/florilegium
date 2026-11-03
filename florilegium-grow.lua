@@ -188,6 +188,30 @@ M.theme(nil)
 -- ---------------------------------------------------------------- region
 -- rects = { {x0,y0,x1,y1}, ... }, a union; shared edges count as open
 local function inside(r, x, y) return x > r[1] and x < r[3] and y > r[2] and y < r[4] end
+function M.in_regions(rects, x, y)
+  for _, r in ipairs(rects) do if inside(r, x, y) then return true end end
+  return false
+end
+function M.subtract_regions(rects, masks)
+  local result = rects
+  for _, mask in ipairs(masks) do
+    local next_result = {}
+    for _, r in ipairs(result) do
+      local x0, y0 = max(r[1], mask[1]), max(r[2], mask[2])
+      local x1, y1 = min(r[3], mask[3]), min(r[4], mask[4])
+      if x0 >= x1 or y0 >= y1 then
+        next_result[#next_result + 1] = r
+      else
+        if r[2] < y0 then next_result[#next_result + 1] = { r[1], r[2], r[3], y0 } end
+        if y1 < r[4] then next_result[#next_result + 1] = { r[1], y1, r[3], r[4] } end
+        if r[1] < x0 then next_result[#next_result + 1] = { r[1], y0, x0, y1 } end
+        if x1 < r[3] then next_result[#next_result + 1] = { x1, y0, r[3], y1 } end
+      end
+    end
+    result = next_result
+  end
+  return result
+end
 local function border(rects, x, y)
   local best = -1
   for _, r in ipairs(rects) do
