@@ -73,7 +73,7 @@ jobs:
         with:
           name: region-mask-preview
           if-no-files-found: error
-          path: tests/regions.pdf
+          path: regions.pdf
 
   # A branch push also posts the check results on its matching open pull request.
   # Only this job may write comments; build jobs remain read-only.
@@ -86,7 +86,7 @@ jobs:
     steps:
       - name: comment test results on the matching open pull request
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.DEPLOY_ACCESS_TOKEN }}
           REPOSITORY: ${{ github.repository }}
           OWNER: ${{ github.repository_owner }}
           BRANCH: ${{ github.ref_name }}
@@ -110,7 +110,7 @@ jobs:
             "${LUA_RESULT}" "${PDF_RESULT}" "${RUN_URL}")"
           comment_id="$(gh api --paginate \
             "repos/${REPOSITORY}/issues/${pull_number}/comments" \
-            --jq '[.[] | select(.user.login == "github-actions[bot]" and ((.body // "") | startswith("<!-- florilegium-test-results -->")))] | .[-1].id // empty')"
+            --jq '[.[] | select((.body // "") | startswith("<!-- florilegium-test-results -->"))] | .[-1].id // empty')"
           if [[ -n "${comment_id}" ]]; then
             gh api --method PATCH \
               "repos/${REPOSITORY}/issues/comments/${comment_id}" -f body="${body}" > /dev/null
