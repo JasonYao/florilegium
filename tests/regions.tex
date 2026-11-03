@@ -50,6 +50,7 @@
     assert(growth.in_regions(polygon_regions, x, polygon_field.y[i]), "growth field entered a polygon mask")
   end
 
+  local test_masks = {}
   florilegium_test_case = 1
   growth.regions = function(g, layout)
     g.colright = g.pw - 0.3
@@ -69,11 +70,23 @@
         },
       }
     end
+    test_masks = masks
     local regions = growth.subtract_regions({ row }, masks)
     local foot = { row[1], row[2], row[3], row[2] + 1.0 }
     return regions, row, foot, nil, row[3], masks
   end
-  florilegium.head = function() end
+  florilegium.head = function(g)
+    local ink = require("florilegium-ink")
+    ink.set_transform(ink.page_transform(g.mirror and g.pw))
+    for _, mask in ipairs(test_masks) do
+      local points = type(mask[1]) == "number" and {
+        { mask[1], mask[2] }, { mask[3], mask[2] }, { mask[3], mask[4] }, { mask[1], mask[4] },
+      } or mask
+      ink.poly(points, true)
+      ink.fill({ 1, 0, 0 }, 0.7)
+    end
+    ink.flush()
+  end
 }
 
 \begin{document}

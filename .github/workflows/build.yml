@@ -1,7 +1,7 @@
 name: build
 on:
   push:
-    branches: [main]
+    branches: ['**', '!main', '!core-patchset']
     tags: ['v*']
   pull_request:
   workflow_dispatch:
@@ -69,6 +69,55 @@ jobs:
             florilegium-grow.pdf
             showcase.pdf
             spread.pdf
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: region-mask-preview
+          if-no-files-found: error
+          path: tests/regions.pdf
+
+  # A branch push also posts the check results on its matching open pull request.
+  # Only this job may write comments; build jobs remain read-only.
+  pr-results:
+    needs: [lua, pdfs]
+    if: always() && github.event_name == 'push' && github.ref_type == 'branch' && github.ref_name != 'main' && github.ref_name != 'core-patchset'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: comment test results on the matching open pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          BRANCH: ${{ github.ref_name }}
+          LUA_RESULT: ${{ needs.lua.result }}
+          PDF_RESULT: ${{ needs.pdfs.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          pulls="$(gh api --method GET "repos/${REPOSITORY}/pulls" \
+            -f state=open -f "head=${OWNER}:${BRANCH}" -f per_page=100)"
+          pull_number="$(jq -r \
+            --arg repository "${REPOSITORY}" \
+            --arg branch "${BRANCH}" \
+            '[.[] | select(.head.ref == $branch and .head.repo != null and .head.repo.full_name == $repository)][0].number // empty' \
+            <<< "${pulls}")"
+          if [[ -z "${pull_number}" ]]; then
+            echo "No open pull request found for ${BRANCH}; skipping test-results comment."
+            exit 0
+          fi
+
+          body="$(printf '<!-- florilegium-test-results -->\n### Automated test results\n- Lua: <code>%s</code>\n- PDFs: <code>%s</code>\n\n[Workflow run](%s)' \
+            "${LUA_RESULT}" "${PDF_RESULT}" "${RUN_URL}")"
+          comment_id="$(gh api --paginate \
+            "repos/${REPOSITORY}/issues/${pull_number}/comments" \
+            --jq '[.[] | select(.user.login == "github-actions[bot]" and ((.body // "") | startswith("<!-- florilegium-test-results -->")))] | .[-1].id // empty')"
+          if [[ -n "${comment_id}" ]]; then
+            gh api --method PATCH \
+              "repos/${REPOSITORY}/issues/comments/${comment_id}" -f body="${body}" > /dev/null
+          else
+            gh api --method POST \
+              "repos/${REPOSITORY}/issues/${pull_number}/comments" -f body="${body}" > /dev/null
+          fi
 
   # A release starts with a tag: git tag -a v1.3 -m v1.3 && git push origin v1.3, after a
   # commit that sets the version everywhere (CLAUDE.md, Releases); the lua job stops a tag
