@@ -3,17 +3,18 @@
 Branches in this fork:
 
 - `main`: a clean mirror of the upstream's `main`. No local commits.
-- `core-patchset`: our patches, rebased on top of `main`. Clients pin this branch.
+- `core-patchset`: our patches, updated by merging `main`. Clients pin this branch or
+  one of its version tags.
 
 Remotes: `origin` is this fork; `upstream` is the original project
-(`<UPSTREAM_URL>`, replace with the real URL).
+(https://github.com/kevinraymond/florilegium).
 
-## A. Keep `main` up to date with the upstream
+## [This forked repo] A. Keep `main` up to date with the upstream
 
 One-time setup:
 
 ```sh
-git remote add upstream <UPSTREAM_URL>
+git remote add upstream https://github.com/kevinraymond/florilegium.git
 ```
 
 Each update:
@@ -28,34 +29,35 @@ git push origin main --tags
 If `--ff-only` fails, `main` has diverged. Move any local commits to
 `core-patchset` first, then `git reset --hard upstream/main` on `main`.
 
-## B. Rebase the patchset on top of the upstream
+## [This forked repo] B. Merge upstream changes into the patchset
 
 After `main` is updated:
 
 ```sh
 git checkout core-patchset
-git rebase main                     # or: git rebase --onto main <old-main-sha>
-# resolve conflicts, then: git add <files> && git rebase --continue
-# (git rebase --abort backs out)
+git merge --no-ff main
+# resolve conflicts, then: git add <files> && git commit
 ```
 
 Check the result (`tools/versioncheck.sh`, `make`, `tools/svgcheck.sh texlua`),
-then publish. The history was rewritten, so a plain push is rejected:
+then publish the merge commit:
 
 ```sh
-git push --force-with-lease origin core-patchset
+git push origin core-patchset
 ```
 
-Notes:
+Each untagged commit pushed to `core-patchset` is tagged automatically with the next
+`YYYY.M.P` version for the current UTC year and month (for example,
+`2026.8.3` is the third tag created in August 2026). The patch number starts
+at 1 each month and increments from the existing tags. The workflow tags the
+branch tip; no `VERSION` file or manual tag command is needed. These plain
+SemVer tags are separate from the upstream package's `v*` release tags.
 
-- `git pull --rebase origin core-patchset` is for a *contributor's* local copy
-  of `core-patchset` after someone else force-pushed it. It does not bring in
-  upstream changes; use `git rebase main` for that.
-- Tag each rebased state (for example `core-v1.3-1`) so clients can pin an
-  exact, immutable point: `git tag core-v1.3-1 && git push origin core-v1.3-1`.
-- Do not force-push `main`.
+- Merges preserve earlier commit IDs, so existing submodule pins remain valid.
+- Do not rewrite or force-push either shared branch, and do not move or delete
+  published version tags.
 
-## C. Using this as a submodule (clients)
+## [Client repo] Using this as a submodule
 
 ### First time
 
@@ -64,12 +66,13 @@ git submodule add -b core-patchset https://github.com/JasonYao/florilegium vendo
 git commit -m "Add florilegium submodule"
 ```
 
-The commit records one exact SHA, so the pin is stable until you update it.
-To pin a tag instead:
+The client commit records one exact SHA, so the pin is stable until you update
+it. To pin an automatically created version tag instead:
 
 ```sh
-git -C vendor/florilegium checkout core-v1.3-1
-git add vendor/florilegium && git commit -m "Pin florilegium core-v1.3-1"
+git -C vendor/florilegium fetch --tags
+git -C vendor/florilegium checkout 2026.8.3
+git add vendor/florilegium && git commit -m "Pin florilegium 2026.8.3"
 ```
 
 Point TeX at it (the package loads its `.lua` files by bare name):
@@ -104,8 +107,7 @@ git add vendor/florilegium
 git commit -m "Update florilegium"
 ```
 
-If the fork's history was rebased, `--remote` still works (it fetches and checks
-out the new tip). Other clones then run
-`git submodule update --init --recursive` after pulling the client repo.
-Pinned SHAs that were rebased away stay available only while some ref or tag
-reaches them, which is another reason to tag each rebased state.
+To update to a specific version tag instead, fetch tags inside the submodule,
+check out the desired `YYYY.M.P` tag, then commit the changed submodule pin in
+the client repo. Other clones run `git submodule update --init --recursive`
+after pulling the client repo.

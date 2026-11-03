@@ -1,0 +1,50 @@
+name: tag patchset
+
+on:
+  push:
+    branches: [core-patchset]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tag-patchset
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: tag the patchset tip
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          base="$(date -u +'%Y.%-m')"
+          escaped_base="${base//./\\.}"
+
+          if git tag --points-at "$TARGET_SHA" |
+            grep -Eq '^[0-9]{4}\.[0-9]{1,2}\.[0-9]+$'; then
+            echo "This commit already has a version tag."
+            exit 0
+          fi
+
+          last_patch="$(
+            git tag --list "${base}.*" |
+              sed -nE "s/^${escaped_base}\\.([0-9]+)$/\\1/p" |
+              sort -n |
+              tail -n 1
+          )"
+          patch=$(( ${last_patch:-0} + 1 ))
+          tag="${base}.${patch}"
+
+          gh api --method POST "/repos/${GITHUB_REPOSITORY}/git/refs" \
+            -f "ref=refs/tags/${tag}" \
+            -f "sha=${TARGET_SHA}"
