@@ -37,7 +37,7 @@ specimen-geometric.pdf: specimen-geometric.tex florilegium.sty $(LUA)
 ornaments.pdf: ornaments.tex florilegium.sty $(LUA)
 	$(LUALATEX) ornaments.tex
 
-# rectangular region subtraction and masked growth
+# rectangular and polygon region subtraction and masked growth
 regioncheck: tests/regions.tex florilegium.sty florilegium-grow.lua $(LUA)
 	mkdir -p build
 	$(LUALATEX) -output-directory=build tests/regions.tex

@@ -188,9 +188,10 @@ M.theme(nil)
 -- ---------------------------------------------------------------- region
 -- Rectangles are {x0,y0,x1,y1}; polygon masks are arrays of {x,y} vertices,
 -- implicitly closed from the last vertex to the first.
--- Coordinates stay in the caller's units. `subtract_regions` accepts rectangle
--- or polygon masks; all masks exclude their union, including polygon boundaries.
--- Its result is a rectangle array with polygon masks in `result.masks`.
+-- All coordinates use the same units and origin as the region rectangles (page
+-- cm for the garden). in_regions(rects, x, y) checks candidate and field points;
+-- rectangle edges are open, and points inside any rectangle are allowed unless
+-- they are inside or on a polygon mask attached to rects.
 local function inside(r, x, y) return x > r[1] and x < r[3] and y > r[2] and y < r[4] end
 local function polygon_mask(mask) return type(mask[1]) == "table" end
 local function validate_polygon(poly)
@@ -241,6 +242,12 @@ function M.in_regions(rects, x, y)
   for _, mask in ipairs(rects.masks or {}) do if in_polygon(mask, x, y) then return false end end
   return true
 end
+-- subtract_regions(rects, masks) returns a copy of the allowed rectangle array
+-- rects after excluding the optional masks array of rectangles or polygons.
+-- Rectangles are split geometrically; polygons are retained in result.masks
+-- for in_regions and field clearance. Masks combine by union: overlap causes no
+-- double subtraction, and any point in any mask (including a polygon boundary)
+-- is excluded. Masks outside rects have no effect.
 function M.subtract_regions(rects, masks)
   local result = {}
   for i, r in ipairs(rects) do result[i] = r end
