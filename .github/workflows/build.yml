@@ -49,6 +49,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - run: |
+          mkdir -p build
+          : > build/preview-times.tsv
       - name: the documents, specimen sheets and ornaments (lualatex)
         uses: xu-cheng/latex-action@6549dc21effb2730855a1281407ecfcececc6c1b # 4.1.0
         with:
@@ -67,20 +70,29 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq poppler-utils > /dev/null
           mkdir -p test-previews
+          render_preview() {
+            local name="$1" pdf="$2" page="$3" started ended elapsed
+            started="$(date +%s%N)"
+            pdftoppm -f "$page" -l "$page" -singlefile -png -scale-to 900 \
+              "$pdf" "test-previews/${name}"
+            ended="$(date +%s%N)"
+            elapsed="$(awk -v start="$started" -v end="$ended" \
+              'BEGIN { printf "%.3f", (end - start) / 1000000000 }')"
+            printf '%s\t%s\n' "$name" "$elapsed" >> build/preview-times.tsv
+          }
           for pdf in florilegium.pdf florilegium-grow.pdf showcase.pdf spread.pdf \
                      specimen.pdf specimen-geometric.pdf ornaments.pdf; do
-            pdftoppm -f 1 -l 1 -singlefile -png -scale-to 900 "$pdf" "test-previews/${pdf%.pdf}"
+            render_preview "${pdf%.pdf}" "$pdf" 1
           done
           region_cases=(single-rectangle disjoint-rectangles overlapping-rectangles \
-                        single-polygon disjoint-polygons overlapping-polygons)
+                        single-polygon multiple-polygons complex-polygon complex-smooth-polygon)
           densities=(low medium high)
           intensities=(low medium high)
           page=1
           for case in "${region_cases[@]}"; do
             for density in "${densities[@]}"; do
               for intensity in "${intensities[@]}"; do
-                pdftoppm -f "$page" -l "$page" -singlefile -png -scale-to 700 \
-                  regions.pdf "test-previews/regions-${case}-${density}-${intensity}"
+                render_preview "regions-${case}-${density}-${intensity}" "regions.pdf" "$page"
                 page=$((page + 1))
               done
             done
@@ -109,6 +121,8 @@ jobs:
             specimen-geometric.pdf
             ornaments.pdf
             regions.pdf
+            build/region-times.tsv
+            build/preview-times.tsv
             test-previews/*.png
 
   # A branch push also posts the check results on its matching open pull request.

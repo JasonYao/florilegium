@@ -67,6 +67,27 @@
       { cx - rx, cy + 0.55 * ry }, { cx - rx, cy - 0.55 * ry },
     }
   end
+  local function complex_polygon(cx, cy)
+    local points = {}
+    for i = 1, 20 do
+      local angle = (i - 1) * math.pi / 10 - math.pi / 2
+      local radius = i == 2 * math.floor(i / 2) + 1 and 2.05 or 0.9
+      points[i] = { cx + radius * math.cos(angle), cy + 1.85 * radius / 2.05 * math.sin(angle) }
+    end
+    return points
+  end
+  local function salinon(cx, cy)
+    local points = {}
+    for i = 1, 128 do
+      local angle = (i - 1) * 2 * math.pi / 128
+      local cosine = math.cos(angle)
+      points[i] = {
+        cx + 2.3 * cosine,
+        cy + 1.75 * math.sin(angle) * (0.68 + 0.32 * cosine * cosine),
+      }
+    end
+    return points
+  end
   florilegium_test_case = 1
   growth.regions = function(g, layout)
     g.colright = g.pw - 0.3
@@ -89,14 +110,14 @@
       masks = { octagon(center, 2.875, 1.575, 1.575) }
     elseif florilegium_test_case == 5 then
       masks = {
-        octagon(center - 1.1, 2.875, 0.75, 1.3),
-        octagon(center + 1.1, 2.875, 0.75, 1.3),
-      }
-    elseif florilegium_test_case == 6 then
-      masks = {
         octagon(center - 0.65, 2.875, 1.1, 1.45),
         octagon(center + 0.65, 2.875, 1.1, 1.45),
+        octagon(center - 4.0, 2.875, 0.65, 0.85),
       }
+    elseif florilegium_test_case == 6 then
+      masks = { complex_polygon(center, g.ph * 0.5) }
+    elseif florilegium_test_case == 7 then
+      masks = { salinon(center, g.ph * 0.5) }
     end
     test_masks = masks
     local regions = growth.subtract_regions({ row }, masks)
@@ -115,11 +136,25 @@
     end
     ink.flush()
   end
+  local original_grown = florilegium.grown
+  local page = 0
+  local timings = assert(io.open("build/region-times.tsv", "w"))
+  timings:close()
+  florilegium.grown = function(...)
+    page = page + 1
+    local started = os.clock()
+    local result = original_grown(...)
+    local elapsed = os.clock() - started
+    local output = assert(io.open("build/region-times.tsv", "a"))
+    output:write(page, string.char(9), tostring(math.floor(elapsed * 1000 + 0.5) / 1000), string.char(10))
+    output:close()
+    return result
+  end
 }
 
 \newcommand{\regioncasename}[1]{%
   \ifcase#1\or Single rectangle\or Two disjoint rectangles\or Two overlapping rectangles%
-  \or Single polygon\or Two disjoint polygons\or Two overlapping polygons\fi}
+  \or Single polygon\or Multiple polygons\or Complex polygon\or Complex smooth polygon\fi}
 \newcommand{\regionlevelname}[1]{\ifcase#1\or Low\or Medium\or High\fi}
 \newcommand{\regionpage}[3]{%
   \directlua{
@@ -133,7 +168,7 @@
 
 \begin{document}
 \directlua{
-  for case = 1, 6 do
+  for case = 1, 7 do
     for density = 1, 3 do
       for intensity = 1, 3 do
         tex.sprint("\\regionpage{" .. case .. "}{" .. density .. "}{" .. intensity .. "}")

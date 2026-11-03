@@ -50,7 +50,36 @@ else
   artifact_link="[Workflow run and available artifacts](${RUN_URL})"
 fi
 
-declare -A preview_urls=()
+declare -A preview_urls page_times preview_times case_times
+region_cases=(single-rectangle disjoint-rectangles overlapping-rectangles \
+              single-polygon multiple-polygons complex-polygon complex-smooth-polygon)
+density_names=(low medium high)
+intensity_names=(low medium high)
+region_time_total=0
+
+if [[ -f "${TEST_RESULTS_DIR}/build/region-times.tsv" ]]; then
+  while IFS=$'\t' read -r page duration; do
+    [[ -n "${page}" && -n "${duration}" ]] || continue
+    page_times["${page}"]="${duration}"
+    case_index=$(( (page - 1) / 9 ))
+    case_name="${region_cases[$case_index]}"
+    previous="${case_times[$case_name]:-0}"
+    case_times["${case_name}"]="$(awk -v a="$previous" -v b="$duration" 'BEGIN { printf "%.3f", a + b }')"
+    region_time_total="$(awk -v a="$region_time_total" -v b="$duration" 'BEGIN { printf "%.3f", a + b }')"
+  done < "${TEST_RESULTS_DIR}/build/region-times.tsv"
+fi
+
+default_preview_total=0
+if [[ -f "${TEST_RESULTS_DIR}/build/preview-times.tsv" ]]; then
+  while IFS=$'\t' read -r name duration; do
+    [[ -n "${name}" && -n "${duration}" ]] || continue
+    preview_times["${name}"]="${duration}"
+    if [[ "${name}" != regions-* ]]; then
+      default_preview_total="$(awk -v a="$default_preview_total" -v b="$duration" 'BEGIN { printf "%.3f", a + b }')"
+    fi
+  done < "${TEST_RESULTS_DIR}/build/preview-times.tsv"
+fi
+
 for name in florilegium florilegium-grow showcase spread specimen specimen-geometric ornaments; do
   preview="${TEST_RESULTS_DIR}/test-previews/${name}.png"
   if [[ -f "${preview}" ]]; then
@@ -58,10 +87,6 @@ for name in florilegium florilegium-grow showcase spread specimen specimen-geome
   fi
 done
 
-region_cases=(single-rectangle disjoint-rectangles overlapping-rectangles \
-              single-polygon disjoint-polygons overlapping-polygons)
-density_names=(low medium high)
-intensity_names=(low medium high)
 for case in "${region_cases[@]}"; do
   for density in "${density_names[@]}"; do
     for intensity in "${intensity_names[@]}"; do
@@ -74,21 +99,34 @@ for case in "${region_cases[@]}"; do
   done
 done
 
-table='## [Custom] Section 1: Regions'
+table="## [Custom] Section 1: Regions — ${region_time_total}s garden generation"
 for i in "${!region_cases[@]}"; do
   case="${region_cases[$i]}"
   case_title="${case//-/ }"
   case_title="${case_title^}"
-  table+=$'\n\n'"### Case $((i + 1)): ${case_title}"
-  table+=$'\n\n| Density \\ Intensity | Low | Medium | High |'
+  case_total="${case_times[$case]:-0.000}"
+  table+=$'\n\n'"<details>"$'\n'"<summary>Case $((i + 1)): ${case_title} — ${case_total}s garden generation</summary>"
+  table+=$'\n\n| | Low intensity | Medium intensity | High intensity |'
   table+=$'\n| --- | --- | --- | --- |'
   for density in "${density_names[@]}"; do
-    row="| ${density^} |"
+    row="| ${density^} density |"
+    density_index=0
+    for level in "${density_names[@]}"; do
+      [[ "$level" == "$density" ]] && break
+      density_index=$((density_index + 1))
+    done
     for intensity in "${intensity_names[@]}"; do
       name="regions-${case}-${density}-${intensity}"
       url="${preview_urls[$name]:-}"
+      intensity_index=0
+      for level in "${intensity_names[@]}"; do
+        [[ "$level" == "$intensity" ]] && break
+        intensity_index=$((intensity_index + 1))
+      done
       if [[ -n "${url}" ]]; then
-        cell="<img src=\"${url}\" width=\"180\" alt=\"${density} density, ${intensity} intensity\">"
+        image_page=$((i * 9 + density_index * 3 + intensity_index + 1))
+        duration="${page_times[$image_page]:-unknown}"
+        cell="<img src=\"${url}\" width=\"180\" alt=\"${density} density, ${intensity} intensity\" title=\"Garden generated in ${duration}s\">"
       else
         cell="Preview unavailable"
       fi
@@ -96,16 +134,18 @@ for i in "${!region_cases[@]}"; do
     done
     table+=$'\n'"${row}"
   done
+  table+=$'\n\n'"</details>"
 done
 
-table+=$'\n\n## [Default] Section 2: Original'
+table+=$'\n\n'"## [Default] Section 2: Original — ${default_preview_total}s preview rendering"
 table+=$'\n\n| PDF output | Inline preview |'
 table+=$'\n| --- | --- |'
 default_count=0
 for name in florilegium florilegium-grow showcase spread specimen specimen-geometric ornaments; do
   url="${preview_urls[default-${name}]:-}"
   if [[ -n "${url}" ]]; then
-    table+=$'\n'"| ${name}.pdf | <img src=\"${url}\" width=\"240\" alt=\"${name}\"> |"
+    duration="${preview_times[$name]:-unknown}"
+    table+=$'\n'"| ${name}.pdf | <img src=\"${url}\" width=\"240\" alt=\"${name}\" title=\"Preview generated in ${duration}s\"> |"
     default_count=$((default_count + 1))
   fi
 done
