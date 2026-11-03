@@ -71,7 +71,7 @@
   growth.regions = function(g, layout)
     g.colright = g.pw - 0.3
     local row = { 0.3, 0.3, g.pw - 0.3, g.ph - 0.3 }
-    local center = g.pw - (0.75 + 0.17 * (g.pw - 3.0))
+    local center = g.pw * 0.5
     local masks = {}
     if florilegium_test_case == 1 then
       masks = { rectangle(center, 2.875, 1.575, 1.575) }
@@ -117,16 +117,28 @@
   end
 }
 
+\newcommand{\regioncasename}[1]{%
+  \ifcase#1\or Single rectangle\or Two disjoint rectangles\or Two overlapping rectangles%
+  \or Single polygon\or Two disjoint polygons\or Two overlapping polygons\fi}
+\newcommand{\regionlevelname}[1]{\ifcase#1\or Low\or Medium\or High\fi}
+\newcommand{\regionpage}[3]{%
+  \directlua{
+    florilegium_test_case = #1
+    florilegium.density = ({0.25, 0.55, 1})[#2]
+    florilegium.intensity = ({0.3, 0.65, 1})[#3]
+  }%
+  \noindent \regioncasename{#1}; density \regionlevelname{#2};
+  intensity \regionlevelname{#3}\newpage
+}
+
 \begin{document}
-\noindent Single rectangular mask
-\newpage
-\directlua{florilegium_test_case = 2}\noindent Two disjoint rectangular masks
-\newpage
-\directlua{florilegium_test_case = 3}\noindent Two overlapping rectangular masks
-\newpage
-\directlua{florilegium_test_case = 4}\noindent Single polygon mask
-\newpage
-\directlua{florilegium_test_case = 5}\noindent Two disjoint polygon masks
-\newpage
-\directlua{florilegium_test_case = 6}\noindent Two overlapping polygon masks
+\directlua{
+  for case = 1, 6 do
+    for density = 1, 3 do
+      for intensity = 1, 3 do
+        tex.sprint("\\regionpage{" .. case .. "}{" .. density .. "}{" .. intensity .. "}")
+      end
+    end
+  end
+}
 \end{document}

@@ -50,36 +50,67 @@ else
   artifact_link="[Workflow run and available artifacts](${RUN_URL})"
 fi
 
-table='| PDF output | Inline preview |'
-table+=$'\n| --- | --- |'
-preview_count=0
+declare -A preview_urls=()
 for name in florilegium florilegium-grow showcase spread specimen specimen-geometric ornaments; do
   preview="${TEST_RESULTS_DIR}/test-previews/${name}.png"
   if [[ -f "${preview}" ]]; then
-    if preview_url="$(upload_attachment "${preview}")"; then
-      image="![${name}](${preview_url})"
-    else
-      image="Preview upload failed"
-    fi
-    table+=$'\n'"| ${name}.pdf | ${image} |"
-    preview_count=$((preview_count + 1))
+    preview_urls["default-${name}"]="$(upload_attachment "${preview}")" || preview_urls["default-${name}"]=
   fi
 done
-for name in single-rectangle disjoint-rectangles overlapping-rectangles \
-            single-polygon disjoint-polygons overlapping-polygons; do
-  preview="${TEST_RESULTS_DIR}/test-previews/regions-${name}.png"
-  if [[ -f "${preview}" ]]; then
-    if preview_url="$(upload_attachment "${preview}")"; then
-      image="![regions-${name}](${preview_url})"
-    else
-      image="Preview upload failed"
-    fi
-    table+=$'\n'"| regions.pdf — ${name} | ${image} |"
-    preview_count=$((preview_count + 1))
+
+region_cases=(single-rectangle disjoint-rectangles overlapping-rectangles \
+              single-polygon disjoint-polygons overlapping-polygons)
+density_names=(low medium high)
+intensity_names=(low medium high)
+for case in "${region_cases[@]}"; do
+  for density in "${density_names[@]}"; do
+    for intensity in "${intensity_names[@]}"; do
+      name="regions-${case}-${density}-${intensity}"
+      preview="${TEST_RESULTS_DIR}/test-previews/${name}.png"
+      if [[ -f "${preview}" ]]; then
+        preview_urls["${name}"]="$(upload_attachment "${preview}")" || preview_urls["${name}"]=
+      fi
+    done
+  done
+done
+
+table='## [Custom] Section 1: Regions'
+for i in "${!region_cases[@]}"; do
+  case="${region_cases[$i]}"
+  case_title="${case//-/ }"
+  case_title="${case_title^}"
+  table+=$'\n\n'"### Case $((i + 1)): ${case_title}"
+  table+=$'\n\n| Density \\ Intensity | Low | Medium | High |'
+  table+=$'\n| --- | --- | --- | --- |'
+  for density in "${density_names[@]}"; do
+    row="| ${density^} |"
+    for intensity in "${intensity_names[@]}"; do
+      name="regions-${case}-${density}-${intensity}"
+      url="${preview_urls[$name]:-}"
+      if [[ -n "${url}" ]]; then
+        cell="<img src=\"${url}\" width=\"180\" alt=\"${density} density, ${intensity} intensity\">"
+      else
+        cell="Preview unavailable"
+      fi
+      row+=" ${cell} |"
+    done
+    table+=$'\n'"${row}"
+  done
+done
+
+table+=$'\n\n## [Default] Section 2: Original'
+table+=$'\n\n| PDF output | Inline preview |'
+table+=$'\n| --- | --- |'
+default_count=0
+for name in florilegium florilegium-grow showcase spread specimen specimen-geometric ornaments; do
+  url="${preview_urls[default-${name}]:-}"
+  if [[ -n "${url}" ]]; then
+    table+=$'\n'"| ${name}.pdf | <img src=\"${url}\" width=\"240\" alt=\"${name}\"> |"
+    default_count=$((default_count + 1))
   fi
 done
-if (( preview_count == 0 )); then
-  table+=$'\n| No PDF previews were produced. | — |'
+if (( default_count == 0 )); then
+  table+=$'\n| No default PDF previews were produced. | — |'
 fi
 
 body="$(printf '<!-- florilegium-test-results -->\n### Automated test results\n\n- Lua: <code>%s</code>\n- PDFs: <code>%s</code>\n- %s\n\n%s\n\n[Workflow run](%s)' \
