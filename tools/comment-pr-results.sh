@@ -138,6 +138,7 @@ for i in "${!region_cases[@]}"; do
 done
 
 table+=$'\n\n'"## [Default] Section 2: Original — ${default_preview_total}s preview rendering"
+table+=$'\n\n<details>'$'\n''<summary>Default document previews</summary>'
 table+=$'\n\n| PDF output | Inline preview |'
 table+=$'\n| --- | --- |'
 default_count=0
@@ -152,6 +153,7 @@ done
 if (( default_count == 0 )); then
   table+=$'\n| No default PDF previews were produced. | — |'
 fi
+table+=$'\n\n</details>'
 
 body="$(printf '<!-- florilegium-test-results -->\n### Automated test results\n\n- Lua: <code>%s</code>\n- PDFs: <code>%s</code>\n- %s\n\n%s\n\n[Workflow run](%s)' \
   "${LUA_RESULT}" "${PDF_RESULT}" "${artifact_link}" "${table}" "${RUN_URL}")"
