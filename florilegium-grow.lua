@@ -186,33 +186,92 @@ end
 M.theme(nil)
 
 -- ---------------------------------------------------------------- region
--- rects = { {x0,y0,x1,y1}, ... }, a union; shared edges count as open
+-- Rectangles are {x0,y0,x1,y1}; polygon masks are arrays of {x,y} vertices,
+-- implicitly closed from the last vertex to the first.
+-- Coordinates stay in the caller's units. `subtract_regions` accepts rectangle
+-- or polygon masks; all masks exclude their union, including polygon boundaries.
+-- Its result is a rectangle array with polygon masks in `result.masks`.
 local function inside(r, x, y) return x > r[1] and x < r[3] and y > r[2] and y < r[4] end
+local function polygon_mask(mask) return type(mask[1]) == "table" end
+local function validate_polygon(poly)
+  assert(#poly >= 3, "florilegium: a polygon mask needs at least three vertices")
+  for _, p in ipairs(poly) do
+    assert(type(p) == "table" and type(p[1]) == "number" and type(p[2]) == "number"
+      and p[1] == p[1] and p[2] == p[2] and abs(p[1]) < math.huge and abs(p[2]) < math.huge,
+      "florilegium: polygon vertices must have finite x,y coordinates")
+  end
+end
+local function on_segment(x, y, a, b)
+  local dx, dy = b[1] - a[1], b[2] - a[2]
+  local cross = (x - a[1]) * dy - (y - a[2]) * dx
+  local eps = 1e-9 * max(1, abs(dx), abs(dy))
+  return abs(cross) <= eps and x >= min(a[1], b[1]) - eps and x <= max(a[1], b[1]) + eps
+    and y >= min(a[2], b[2]) - eps and y <= max(a[2], b[2]) + eps
+end
+local function in_polygon(poly, x, y)
+  local inside_poly, j = false, #poly
+  for i = 1, #poly do
+    local a, b = poly[j], poly[i]
+    if on_segment(x, y, a, b) then return true end
+    if (a[2] > y) ~= (b[2] > y) and x < (b[1] - a[1]) * (y - a[2]) / (b[2] - a[2]) + a[1] then
+      inside_poly = not inside_poly
+    end
+    j = i
+  end
+  return inside_poly
+end
+local function segment_distance(x, y, a, b)
+  local dx, dy = b[1] - a[1], b[2] - a[2]
+  local d2 = dx * dx + dy * dy
+  local t = d2 == 0 and 0 or max(0, min(1, ((x - a[1]) * dx + (y - a[2]) * dy) / d2))
+  return dist(x, y, a[1] + t * dx, a[2] + t * dy)
+end
+local function polygon_distance(poly, x, y)
+  local best, j = math.huge, #poly
+  for i = 1, #poly do
+    best = min(best, segment_distance(x, y, poly[j], poly[i]))
+    j = i
+  end
+  return best
+end
 function M.in_regions(rects, x, y)
-  for _, r in ipairs(rects) do if inside(r, x, y) then return true end end
-  return false
+  local allowed = false
+  for _, r in ipairs(rects) do if inside(r, x, y) then allowed = true break end end
+  if not allowed then return false end
+  for _, mask in ipairs(rects.masks or {}) do if in_polygon(mask, x, y) then return false end end
+  return true
 end
 function M.subtract_regions(rects, masks)
-  local result = rects
-  for _, mask in ipairs(masks) do
-    local next_result = {}
-    for _, r in ipairs(result) do
-      local x0, y0 = max(r[1], mask[1]), max(r[2], mask[2])
-      local x1, y1 = min(r[3], mask[3]), min(r[4], mask[4])
-      if x0 >= x1 or y0 >= y1 then
-        next_result[#next_result + 1] = r
-      else
-        if r[2] < y0 then next_result[#next_result + 1] = { r[1], r[2], r[3], y0 } end
-        if y1 < r[4] then next_result[#next_result + 1] = { r[1], y1, r[3], r[4] } end
-        if r[1] < x0 then next_result[#next_result + 1] = { r[1], y0, x0, y1 } end
-        if x1 < r[3] then next_result[#next_result + 1] = { x1, y0, r[3], y1 } end
+  local result = {}
+  for i, r in ipairs(rects) do result[i] = r end
+  local polygon_masks = {}
+  for _, mask in ipairs(rects.masks or {}) do polygon_masks[#polygon_masks + 1] = mask end
+  for _, mask in ipairs(masks or {}) do
+    if polygon_mask(mask) then
+      validate_polygon(mask)
+      polygon_masks[#polygon_masks + 1] = mask
+    else
+      local next_result = {}
+      for _, r in ipairs(result) do
+        local x0, y0 = max(r[1], mask[1]), max(r[2], mask[2])
+        local x1, y1 = min(r[3], mask[3]), min(r[4], mask[4])
+        if x0 >= x1 or y0 >= y1 then
+          next_result[#next_result + 1] = r
+        else
+          if r[2] < y0 then next_result[#next_result + 1] = { r[1], r[2], r[3], y0 } end
+          if y1 < r[4] then next_result[#next_result + 1] = { r[1], y1, r[3], r[4] } end
+          if r[1] < x0 then next_result[#next_result + 1] = { r[1], y0, x0, y1 } end
+          if x1 < r[3] then next_result[#next_result + 1] = { x1, y0, r[3], y1 } end
+        end
       end
+      result = next_result
     end
-    result = next_result
   end
+  if #polygon_masks > 0 then result.masks = polygon_masks end
   return result
 end
 local function border(rects, x, y)
+  if not M.in_regions(rects, x, y) then return -1 end
   local best = -1
   for _, r in ipairs(rects) do
     if inside(r, x, y) then
@@ -226,6 +285,7 @@ local function border(rects, x, y)
       if d > best then best = d end
     end
   end
+  for _, mask in ipairs(rects.masks or {}) do best = min(best, polygon_distance(mask, x, y)) end
   return best
 end
 

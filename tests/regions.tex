@@ -34,6 +34,22 @@
     end
   end
 
+  local polygon = { { 2, 2 }, { 8, 2 }, { 8, 4 }, { 4, 4 }, { 4, 8 }, { 2, 8 } }
+  local polygon_regions = growth.subtract_regions(base, { polygon })
+  assert(not growth.in_regions(polygon_regions, 3, 6), "polygon mask did not exclude its vertical arm")
+  assert(not growth.in_regions(polygon_regions, 6, 3), "polygon mask did not exclude its horizontal arm")
+  assert(not growth.in_regions(polygon_regions, 4, 5), "polygon mask boundary should be excluded")
+  assert(growth.in_regions(polygon_regions, 5, 5), "concave polygon mask excluded its open notch")
+  local overlap = { { 4, 4 }, { 7, 4 }, { 7, 7 }, { 4, 7 } }
+  local overlapping_regions = growth.subtract_regions(polygon_regions, { overlap })
+  assert(not growth.in_regions(overlapping_regions, 5, 5), "intersecting polygon masks should exclude their union")
+  assert(growth.in_regions(polygon_regions, 5, 5), "adding a mask mutated its input regions")
+  local polygon_field = growth.field(polygon_regions)
+  assert(math.abs(polygon_field.free_at(4.1, 5.1) - 0.1) < 0.001, "polygon boundary did not constrain free space")
+  for i, x in ipairs(polygon_field.x) do
+    assert(growth.in_regions(polygon_regions, x, polygon_field.y[i]), "growth field entered a polygon mask")
+  end
+
   florilegium_test_case = 1
   growth.regions = function(g, layout)
     g.colright = g.pw - 0.3
@@ -46,7 +62,11 @@
       local center = g.pw - (0.75 + 0.17 * (g.pw - 3.0))
       masks = {
         { 1.2, g.ph - 4.5, g.pw - 1.2, g.ph - 0.9 },
-        { center - 1.575, 1.3, center + 1.575, 4.45 },
+        {
+          { center - 1.575, 2.0 }, { center - 1.0, 1.3 }, { center + 1.0, 1.3 },
+          { center + 1.575, 2.0 }, { center + 1.575, 3.8 }, { center + 0.8, 4.45 },
+          { center - 0.8, 4.45 }, { center - 1.575, 3.8 },
+        },
       }
     end
     local regions = growth.subtract_regions({ row }, masks)
@@ -63,5 +83,5 @@
 \noindent Rectangle with one masked region
 \newpage
 \directlua{florilegium_test_case = 3}
-\noindent Rectangle with multiple masked regions
+\noindent Multiple masked regions, including a polygon
 \end{document}
