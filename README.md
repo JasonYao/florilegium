@@ -417,8 +417,9 @@ point; the branch becomes a stem in turn. Big holes are taken first, so flowers 
 land early, sprays and leaves fill the middle, and the loop ends by tucking leaflets, buds
 and florets onto the stems. The end of the text is measured with `\pagetotal` in the same
 pass, so a short last page grows branches into the space below it with one compilation.
-For custom layouts, `require("florilegium-grow")` also exposes `subtract_regions(rects, masks)`
-and `in_regions(rects, x, y)` for unions of rectangular regions.
+For custom layouts, `require("florilegium-grow")` also exposes `subtract_regions(rects, masks)`,
+`in_regions(rects, x, y)`, and `fits_region(rects, x, y, radius)`. The last checks whether a
+circle around a drawing origin clears the region and mask edges by 0.04 cm.
 
 **Reading the page** (`florilegium.lua`). A heading or `\florilegiumbloom` leaves an
 invisible marker node in the text. When the page is shipped out, its box is walked node by

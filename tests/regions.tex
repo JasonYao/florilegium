@@ -44,6 +44,9 @@
   assert(not growth.in_regions(polygon_regions, 6, 3), "polygon mask did not exclude its horizontal arm")
   assert(not growth.in_regions(polygon_regions, 4, 5), "polygon mask boundary should be excluded")
   assert(growth.in_regions(polygon_regions, 5, 5), "concave polygon mask excluded its open notch")
+  assert(growth.fits_region(polygon_regions, 5, 5, 0.9), "a footprint should fit inside an open region")
+  assert(not growth.fits_region(polygon_regions, 3, 5, 0.2), "a footprint crossed a polygon boundary")
+  assert(not growth.fits_region(polygon_regions, 1, 5, 1.1), "a footprint crossed a rectangle boundary")
   local disjoint_polygon = { { 7, 7 }, { 9, 7 }, { 9, 9 }, { 7, 9 } }
   local disjoint_polygon_regions = growth.subtract_regions(polygon_regions, { disjoint_polygon })
   assert(not growth.in_regions(disjoint_polygon_regions, 8, 8), "disjoint polygon mask was not excluded")

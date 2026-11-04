@@ -45,6 +45,7 @@ local GRID     = 0.2    -- candidate spacing (cm)
 local REACH    = 3.0    -- a motif must be within this distance of a stem
 local SMALLEST = 0.36   -- the branch loop stops below this free radius
 local FILLMIN  = 0.17   -- the filler stops below this
+local EDGE_GAP = 0.04   -- keep a little breathing room between ink and a region edge
 
 -- the growth animation: a stem is recorded as prefixes GROWSTEP cm apart, a
 -- motif at the scales in BLOOM before its full size (eased: quick, then settling)
@@ -55,19 +56,24 @@ local FLYSTEPS = 14     -- positions of a visitor flying in
 -- ---------------------------------------------------------------- motifs
 -- r(s): proxy radius; off(s): distance from the disc center back to the
 -- primitive's origin, along the motif's axis; upright: the axis leans upward
--- (sprays reach for the light); draw(rng, s, p): the primitive in a frame whose
--- +y is the axis (p: progress of its flight in the animation, nil on the page).
+-- (sprays reach for the light); extent(s): conservative radius of the complete
+-- drawing around its origin; draw(rng, s, p): the primitive in a frame whose +y
+-- is the axis (p: progress of its flight in the animation, nil on the page).
+-- Themes that change a primitive's footprint should update its extent(s).
 -- Visitors fly: no branch, and only on pages that the visitor stream allows.
 -- spring/summer/autumn multiply w as the garden ages (default 1; see `season`).
 local motifs = {
   { name = "flower",  w = 3,   smin = 0.75, smax = 1.3, max = 3, hard = true, layer = L_BLOOM, spring = 0.12, autumn = 0.45,
     r = function(s) return 1.0 * s end, off = function(s) return 0 end,
+    extent = function(s) return 1.2 * s end,
     draw = function(rng, s) F.flower(rng, s) end },
   { name = "lily",    w = 2,   smin = 0.8,  smax = 1.25, max = 2, hard = true, layer = L_BLOOM, upright = 0.4, spring = 0.1, autumn = 0.4,
     r = function(s) return 0.9 * s end, off = function(s) return 0.15 * s end,
+    extent = function(s) return 1.2 * s end,
     draw = function(rng, s) F.lily(rng, s) end },
   { name = "blossoms", w = 3,  smin = 0.55, smax = 0.85, max = 5, layer = L_BLOOM, upright = 0.5, spring = 0.5, autumn = 0.5,
     r = function(s) return s end, off = function(s) return 0.6 * s end,
+    extent = function(s) return 1.4 * s end,
     draw = function(rng, s)
       local n = rng.int(2, 4)
       for k = 1, n do
@@ -81,21 +87,27 @@ local motifs = {
     end },
   { name = "cyme",    w = 3,   smin = 1.0,  smax = 2.4, max = 6, layer = L_AIRY, upright = 0.6, spring = 1.3, autumn = 0.7,
     r = function(s) return 0.45 * s end, off = function(s) return 0.5 * s end,
+    extent = function(s) return 1.7 * s end,
     draw = function(rng, s) F.cyme(rng, s) end },
   { name = "sprig",   w = 2,   smin = 1.2,  smax = 2.8, max = 4, layer = L_AIRY, upright = 0.8, spring = 1.2,
     r = function(s) return 0.42 * s end, off = function(s) return 0.5 * s end,
+    extent = function(s) return 3.1 * s end,
     draw = function(rng, s) F.sprig(rng, s) end },
   { name = "umbel",   w = 1.5, smin = 0.8,  smax = 1.5, max = 3, hard = true, layer = L_AIRY, upright = 1.0, spring = 0.8, autumn = 0.8,
     r = function(s) return 0.75 * s end, off = function(s) return 0.6 * s end,
+    extent = function(s) return 1.3 * s end,
     draw = function(rng, s) F.umbel(rng, s) end },
   { name = "leaf",    w = 2,   smin = 0.9,  smax = 2.0, max = 8, layer = L_LEAF, upright = 0.2, spring = 1.3, autumn = 1.2,
     r = function(s) return 0.32 * s end, off = function(s) return 0.5 * s end,
+    extent = function(s) return 1.1 * s end,
     draw = function(rng, s) ink.scale(s) F.leaf(rng, { w = rng.range(0.22, 0.3), depth = rng.chance(0.6) and rng.range(0.4, 0.8) or 0 }) end },
   { name = "bud",     w = 1,   smin = 0.45, smax = 0.75, max = 5, layer = L_BLOOM, upright = 0.5, spring = 3.5, autumn = 0.3,
     r = function(s) return 0.45 * s end, off = function(s) return 0.5 * s end,
+    extent = function(s) return 1.1 * s end,
     draw = function(rng, s) F.bud(rng, s) end },
   { name = "bells",   w = 0.7, smin = 0.6,  smax = 0.95, max = 1, hard = true, layer = L_BLOOM, hang = true, spring = 0.5, autumn = 0.6,
     r = function(s) return 0.62 * s end, off = function(s) return 0 end,
+    extent = function(s) return 1.15 * s end,
     draw = function(rng, s)
       F.bell(rng, s)
       ink.moveto(0, 0) ink.curveto(0.15 * s, 0.25 * s, 0.4 * s, 0.25 * s, 0.5 * s, 0.1 * s) ink.stroke(tone(0.1), 0.35)
@@ -103,10 +115,12 @@ local motifs = {
     end },
   { name = "tendril", w = 0.6, smin = 0.3,  smax = 0.5, max = 4, layer = L_AIRY, spring = 2, autumn = 1.3,
     r = function(s) return 1.0 * s end, off = function(s) return 1.0 * s end,
+    extent = function(s) return 2.3 * s end,
     draw = function(rng, s) ink.rotate(90) F.tendril(rng, s) end },
   { name = "budding", w = 3,   smin = 0.55, smax = 0.9, max = 6, layer = L_BLOOM, upright = 0.6,
     spring = 1, summer = 0, autumn = 0,
     r = function(s) return 0.9 * s end, off = function(s) return 0.6 * s end,
+    extent = function(s) return 1.5 * s end,
     draw = function(rng, s)                    -- a spray of closed buds on stalks
       local n = rng.int(2, 4)
       for k = 1, n do
@@ -120,14 +134,18 @@ local motifs = {
   { name = "seedhead", w = 2,  smin = 0.45, smax = 0.75, max = 3, hard = true, layer = L_AIRY, upright = 0.6,
     spring = 0, summer = 0, autumn = 1,
     r = function(s) return 1.05 * s end, off = function(s) return 0 end,
+    extent = function(s) return 3.0 * s end,
     draw = function(rng, s) F.seedhead(rng, s) end },
   { name = "butterfly", w = 0.8, smin = 1.1, smax = 1.5, max = 2, hard = true, layer = L_ACCENT, fly = true,
     r = function(s) return 0.5 * s end, off = function(s) return 0 end,
+    extent = function(s) return 0.7 * s end,
     draw = function(rng, s, p) F.butterfly(rng, s, p and { open = 0.3 + 0.7 * abs(cos(p * 5 * pi)) }) end },
   { name = "bee",     w = 0.8, smin = 0.7,  smax = 0.85, max = 2, hard = true, layer = L_ACCENT, fly = true,
     r = function(s) return 0.6 * s end, off = function(s) return 0 end,
+    extent = function(s) return 3.3 * s end,
     draw = function(rng, s, p) F.bee(rng, s, { trail = p == nil }) end },
 }
+local function motif_extent(m, s) return m.extent and m.extent(s) or m.r(s) end
 
 M.layers = { ghost = L_GHOST, stem = L_STEM, leaf = L_LEAF, airy = L_AIRY, bloom = L_BLOOM, accent = L_ACCENT }
 
@@ -294,6 +312,12 @@ local function border(rects, x, y)
   end
   for _, mask in ipairs(rects.masks or {}) do best = min(best, polygon_distance(mask, x, y)) end
   return best
+end
+-- A complete primitive must fit inside the union of allowed regions, not just
+-- have its origin inside. Radius is measured from the primitive's drawing origin.
+function M.fits_region(rects, x, y, radius)
+  return type(radius) == "number" and radius >= 0 and radius == radius and radius < math.huge
+    and border(rects, x, y) >= radius + EDGE_GAP
 end
 
 -- the regions a garden may use, in page cm: the margin column, the footer band
@@ -486,6 +510,23 @@ function M.page(g)
   local rects, col, foot, spill, fx1 = M.regions(g, layout)
   local fld = M.field(rects)
   local gx, gy, free, each_near, disc, free_at = fld.x, fld.y, fld.free, fld.each_near, fld.disc, fld.free_at
+  local function fit_size(s, min_s, origin, extent)
+    min_s = min(s, min_s)
+    local function fits(size)
+      local x, y = origin(size)
+      return M.fits_region(rects, x, y, extent(size)), x, y
+    end
+    local ok, x, y = fits(s)
+    if ok then return s, x, y end
+    if not fits(min_s) then return nil end
+    local lo, hi = min_s, s
+    for _ = 1, 20 do
+      local mid = (lo + hi) / 2
+      if fits(mid) then lo = mid else hi = mid end
+    end
+    local _, ox, oy = fits(lo)
+    return lo, ox, oy
+  end
   local sdist = {}                          -- distance to the nearest stem point
   for i = 1, #gx do sdist[i] = math.huge end
 
@@ -540,7 +581,8 @@ function M.page(g)
   -- draw a primitive at (x,y) with its +y axis at angle `a` (degrees from +x).
   -- In the animation it opens, or with path(e) -> x, y, a it travels to its place
   -- in `steps` positions and fn gets the progress e.
-  local function place(layer, x, y, a, fn, path, steps)
+  local function place(layer, x, y, a, fn, path, steps, extent)
+    if extent and not M.fits_region(rects, x, y, extent) then return false end
     ink.layer(layer)
     if anim then
       -- a few earlier copies with the same random draws, then the real one
@@ -562,6 +604,7 @@ function M.page(g)
     end
     ink.push() ink.translate(x, y) ink.rotate(a - 90) fn() ink.pop()
     if anim then ink.tag({ now, 0 }) end
+    return true
   end
   -- a flight path for the animation: from distance d in direction `from` (degrees),
   -- easing out, swinging sideways by `swing`, wobbling about the final heading
@@ -682,12 +725,15 @@ function M.page(g)
   do
     local p, q = mains[1][#mains[1]], mains[1][#mains[1] - 2]
     local hx, hy = norm(p[1] - q[1], p[2] - q[2])
-    local s = min(1.75, g.colright * 0.27)
     local fx, fy = p[1] + hx * 0.2, p[2] + hy * 0.2
-    event({ kind = "bloom", parent = mainev[1], at = 1, size = s })
-    place(L_BLOOM, fx, fy, 90, function() F.flower(rng.fork(), s) end)
-    disc(fx, fy, 1.05 * s, 0.85)
-    blooms[#blooms + 1] = { fx, fy, s }
+    local s = fit_size(min(1.75, g.colright * 0.27), 0.55, function() return fx, fy end,
+      function(size) return 1.2 * size end)
+    if s then
+      event({ kind = "bloom", parent = mainev[1], at = 1, size = s })
+      place(L_BLOOM, fx, fy, 90, function() F.flower(rng.fork(), s) end, nil, nil, 1.2 * s)
+      disc(fx, fy, 1.05 * s, 0.85)
+      blooms[#blooms + 1] = { fx, fy, s }
+    end
     for k = 2, NSTEM do
       local pts = mains[k]
       local p2, q2 = pts[#pts], pts[#pts - 2]
@@ -696,40 +742,73 @@ function M.page(g)
       local tip = spring > 0.5 and "bud" or autumn > 0.5 and "seedhead" or nil
       if k == 2 then
         local s2 = layout.range(1.0, 1.2)
-        event({ kind = "bloom", parent = mainev[2], at = 1, size = s2 })
         if tip == "bud" then
-          place(L_BLOOM, p2[1], p2[2], deg(ax, ay), function() F.bud(rng.fork(), 0.95 * s2) end)
+          s2 = fit_size(s2, 0.5, function() return p2[1], p2[2] end, function(size) return 1.1 * 0.95 * size end)
+          if s2 then
+            event({ kind = "bloom", parent = mainev[2], at = 1, size = s2 })
+            place(L_BLOOM, p2[1], p2[2], deg(ax, ay), function() F.bud(rng.fork(), 0.95 * s2) end, nil, nil, 1.1 * 0.95 * s2)
+          end
         elseif tip == "seedhead" then
-          place(L_AIRY, p2[1] + ax * 0.15, p2[2] + ay * 0.15, 90, function() F.seedhead(rng.fork(), 0.75 * s2) end)
+          local sx, sy = p2[1] + ax * 0.15, p2[2] + ay * 0.15
+          s2 = fit_size(s2, 0.5, function() return sx, sy end, function(size) return 3.0 * 0.75 * size end)
+          if s2 then
+            event({ kind = "bloom", parent = mainev[2], at = 1, size = s2 })
+            place(L_AIRY, sx, sy, 90, function() F.seedhead(rng.fork(), 0.75 * s2) end, nil, nil, 3.0 * 0.75 * s2)
+          end
         else
-          place(L_BLOOM, p2[1] + ax * 0.25 * s2, p2[2] + ay * 0.25 * s2, deg(ax, ay), function() F.lily(rng.fork(), s2) end)
+          local lx, ly = p2[1] + ax * 0.25 * s2, p2[2] + ay * 0.25 * s2
+          s2 = fit_size(s2, 0.5, function(size) return p2[1] + ax * 0.25 * size, p2[2] + ay * 0.25 * size end,
+            function(size) return 1.2 * size end)
+          if s2 then
+            lx, ly = p2[1] + ax * 0.25 * s2, p2[2] + ay * 0.25 * s2
+            event({ kind = "bloom", parent = mainev[2], at = 1, size = s2 })
+            place(L_BLOOM, lx, ly, deg(ax, ay), function() F.lily(rng.fork(), s2) end, nil, nil, 1.2 * s2)
+          end
         end
-        disc(p2[1] + ax * 0.3 * s2, p2[2] + ay * 0.3 * s2, 0.95 * s2, 0.85)
-        counts.lily = counts.lily + 1
+        if s2 then
+          disc(p2[1] + ax * 0.3 * s2, p2[2] + ay * 0.3 * s2, 0.95 * s2, 0.85)
+          counts.lily = counts.lily + 1
+        end
       else
         local s3 = layout.range(0.85, 1.0)
-        event({ kind = "bloom", parent = mainev[3], at = 1, size = s3 })
         if tip == "bud" then
-          place(L_BLOOM, p2[1], p2[2], deg(ax, ay), function() F.bud(rng.fork(), 0.9 * s3) end)
+          s3 = fit_size(s3, 0.5, function() return p2[1], p2[2] end, function(size) return 1.1 * 0.9 * size end)
+          if s3 then
+            event({ kind = "bloom", parent = mainev[3], at = 1, size = s3 })
+            place(L_BLOOM, p2[1], p2[2], deg(ax, ay), function() F.bud(rng.fork(), 0.9 * s3) end, nil, nil, 1.1 * 0.9 * s3)
+          end
         elseif tip == "seedhead" then
-          place(L_AIRY, p2[1], p2[2], 90, function() F.seedhead(rng.fork(), 0.75 * s3) end)
+          s3 = fit_size(s3, 0.5, function() return p2[1], p2[2] end, function(size) return 3.0 * 0.75 * size end)
+          if s3 then
+            event({ kind = "bloom", parent = mainev[3], at = 1, size = s3 })
+            place(L_AIRY, p2[1], p2[2], 90, function() F.seedhead(rng.fork(), 0.75 * s3) end, nil, nil, 3.0 * 0.75 * s3)
+          end
         else
-          place(L_BLOOM, p2[1], p2[2], 90, function() F.flower(rng.fork(), s3) end)
-          blooms[#blooms + 1] = { p2[1], p2[2], s3 }
+          s3 = fit_size(s3, 0.5, function() return p2[1], p2[2] end, function(size) return 1.2 * size end)
+          if s3 then
+            event({ kind = "bloom", parent = mainev[3], at = 1, size = s3 })
+            place(L_BLOOM, p2[1], p2[2], 90, function() F.flower(rng.fork(), s3) end, nil, nil, 1.2 * s3)
+            blooms[#blooms + 1] = { p2[1], p2[2], s3 }
+          end
         end
-        disc(p2[1], p2[2], s3, 0.85)
-        counts.flower = counts.flower + 1
+        if s3 then
+          disc(p2[1], p2[2], s3, 0.85)
+          counts.flower = counts.flower + 1
+        end
       end
     end
   end
   for b, pts in ipairs(arcs) do
     local p = pts[#pts]
-    local s = layout.range(1.0, 1.25)
-    event({ kind = "bloom", parent = arcev[b], at = 1, size = s })
-    place(L_BLOOM, p[1], p[2], 90, function() F.flower(rng.fork(), s) end)
-    disc(p[1], p[2], s, 0.85)
-    counts.flower = counts.flower + 1
-    blooms[#blooms + 1] = { p[1], p[2], s }
+    local s = fit_size(layout.range(1.0, 1.25), 0.5, function() return p[1], p[2] end,
+      function(size) return 1.2 * size end)
+    if s then
+      event({ kind = "bloom", parent = arcev[b], at = 1, size = s })
+      place(L_BLOOM, p[1], p[2], 90, function() F.flower(rng.fork(), s) end, nil, nil, 1.2 * s)
+      disc(p[1], p[2], s, 0.85)
+      counts.flower = counts.flower + 1
+      blooms[#blooms + 1] = { p[1], p[2], s }
+    end
   end
   -- ghosts: large pale flowers behind, given a little room so they show
   do
@@ -738,10 +817,14 @@ function M.page(g)
     for k = 1, ng do
       local gxp = g.colright * layout.range(0.35, 0.65)
       local gyp = g.ph * (k == 1 and layout.range(0.15, 0.3) or layout.range(0.45, 0.6))
-      local s = layout.range(1.3, 1.6)
-      event({ kind = "bloom", phase = "ghost", i = k })
-      place(L_GHOST, gxp, gyp, 90, function() F.ghost(0.62, function() F.flower(rng.fork(), s) end) end)
-      disc(gxp, gyp, 0.8 * s, 0.6)
+      local s = fit_size(layout.range(1.3, 1.6), 0.7, function() return gxp, gyp end,
+        function(size) return 1.2 * size end)
+      if s then
+        event({ kind = "bloom", phase = "ghost", i = k })
+        place(L_GHOST, gxp, gyp, 90, function() F.ghost(0.62, function() F.flower(rng.fork(), s) end) end,
+          nil, nil, 1.2 * s)
+        disc(gxp, gyp, 0.8 * s, 0.6)
+      end
     end
   end
 
@@ -761,7 +844,7 @@ function M.page(g)
         local a = deg(q[1] - p[1], q[2] - p[2]) + (j % 2 == 0 and 1 or -1) * layout.range(40, 60)
         local ls = layout.range(0.45, 0.75)
         event({ kind = "bloom", parent = ev, at = i / #pts, size = ls })
-        place(L_LEAF, p[1], p[2], a, function() ink.scale(ls) F.leaflet(rng.fork()) end)
+        place(L_LEAF, p[1], p[2], a, function() ink.scale(ls) F.leaflet(rng.fork()) end, nil, nil, ls)
         disc(p[1] + cos(a * rad) * ls * 0.5, p[2] + sin(a * rad) * ls * 0.5, 0.25 * ls, 0.7)
       end
     end
@@ -790,28 +873,37 @@ function M.page(g)
         for _ = 1, 20 do local mid = (lo + hi) / 2 if m.r(mid) > f * 0.95 then hi = mid else lo = mid end end
         s = lo r = m.r(s)
       end
-      if r <= f * 1.15 and py > 0.6 + r and py < g.ph - 0.6 - r then
+      if r <= f * 1.15 and py > 0.6 + motif_extent(m, s) and py < g.ph - 0.6 - motif_extent(m, s) then
         local S = nearest_stem(px, py)
         local dx, dy = norm(px - S[1], py - S[2])
         local ax, ay = norm(dx, dy + (m.upright or 0))
-        local ox, oy = px - ax * m.off(s), py - ay * m.off(s)
-        nmarks = nmarks + 1
-        local bev = event({ kind = "stem", phase = "marks", i = nmarks })
-        if m.fly then
-          event({ kind = "bloom", parent = bev, at = 1, span = 1.2 })
-          place(m.layer, px, py, 90, function(p) m.draw(rng.fork(), s, p) end, arrive(px, py, 90, 3, 200, 0.5))
-        else
-          branch_to(S, ox, oy, ax, ay, 0.045, bev)
-          event({ kind = "bloom", parent = bev, at = 1, size = r })
-          -- a heading's flower is painted in the accent, as headings were rubricated
-          local heading = mk.kind == "heading"
-          place(m.layer, ox, oy, deg(ax, ay), function()
-            if heading then ink.in_accent(function() m.draw(rng.fork(), s) end) else m.draw(rng.fork(), s) end
-          end)
-          if m.name == "flower" then blooms[#blooms + 1] = { ox, oy, s } end
+        local origin = function(size)
+          if m.hang then return px - dx * 0.2 * size, py + 0.45 * size end
+          return px - ax * m.off(size), py - ay * m.off(size)
         end
-        counts[m.name] = counts[m.name] + 1
-        disc(px, py, r, 0.85)
+        local placed_size, ox, oy = fit_size(s, m.smin, m.fly and function() return px, py end or origin,
+          function(size) return motif_extent(m, size) end)
+        if placed_size then
+          s, r = placed_size, m.r(placed_size)
+          if not m.fly then ox, oy = origin(s) end
+          nmarks = nmarks + 1
+          local bev = event({ kind = "stem", phase = "marks", i = nmarks })
+          if m.fly then
+            event({ kind = "bloom", parent = bev, at = 1, span = 1.2 })
+            place(m.layer, px, py, 90, function(p) m.draw(rng.fork(), s, p) end,
+              arrive(px, py, 90, 3, 200, 0.5), nil, motif_extent(m, s))
+          else
+            branch_to(S, ox, oy, ax, ay, 0.045, bev)
+            event({ kind = "bloom", parent = bev, at = 1, size = r })
+            local heading = mk.kind == "heading"
+            place(m.layer, ox, oy, deg(ax, ay), function()
+              if heading then ink.in_accent(function() m.draw(rng.fork(), s) end) else m.draw(rng.fork(), s) end
+            end, nil, nil, motif_extent(m, s))
+            if m.name == "flower" then blooms[#blooms + 1] = { ox, oy, s } end
+          end
+          counts[m.name] = counts[m.name] + 1
+          disc(px, py, r, 0.85)
+        end
       end
     end
   end
@@ -962,44 +1054,53 @@ function M.page(g)
     local elig, wts, wsum = {}, {}, 0
     for _, m in ipairs(motifs) do
       local wt = m.w * season(m.spring or 1, m.summer or 1, m.autumn or 1) / (1 + counts[m.name] / max(1, caps[m.name]))
-      local ok = wt > 0 and m.r(m.smin) <= f * 1.05 and (not m.hard or counts[m.name] < caps[m.name]) and (not m.fly or visiting[m.name])
+      local ok = wt > 0 and motif_extent(m, m.smin) <= f * 1.05
+        and (not m.hard or counts[m.name] < caps[m.name]) and (not m.fly or visiting[m.name])
       if ok then elig[#elig + 1] = m wts[#elig] = wt wsum = wsum + wt end
     end
     if #elig == 0 then free[bi] = 0 else
       local pick, acc = elig[#elig], layout.u() * wsum
       for k, m in ipairs(elig) do acc = acc - wts[k] if acc <= 0 then pick = m break end end
       local s = pick.smax
-      if pick.r(s) > f * 0.95 then
+      if motif_extent(pick, s) > f * 0.95 then
         local lo, hi = pick.smin, s
-        for _ = 1, 20 do local mid = (lo + hi) / 2 if pick.r(mid) > f * 0.95 then hi = mid else lo = mid end end
+        for _ = 1, 20 do local mid = (lo + hi) / 2 if motif_extent(pick, mid) > f * 0.95 then hi = mid else lo = mid end end
         s = lo
       end
       local S, sd = nearest_stem(px, py)
       local dx, dy = norm(px - S[1], py - S[2])
       -- the motif's axis: away from the stem, leaning up for the upright kinds
       local ax, ay = norm(dx, dy + (pick.upright or 0))
-      local ox, oy = px - ax * pick.off(s), py - ay * pick.off(s)
-      if pick.hang then ox, oy = px - dx * 0.2 * s, py + 0.45 * s end
-      nbranch = nbranch + 1
-      local bev = event({ kind = "stem", phase = "branch", i = nbranch })
-      overlay(bev, px, py, f, S)
-      if pick.fly then
-        -- a visitor: no branch, any heading, and in the animation it flies in
-        local a = pick.name == "bee" and layout.range(0, 360) or 90 + layout.sym(50)
-        event({ kind = "bloom", parent = bev, at = 1, span = 1.2 })
-        place(pick.layer, px, py, a, function(p) pick.draw(rng.fork(), s, p) end,
-          arrive(px, py, a, 3, layout.range(0, 360), layout.sym(0.8)))
-      else
-        if dist(ox, oy, S[1], S[2]) > 0.12 then
-          branch_to(S, ox, oy, pick.hang and dx or ax, pick.hang and -0.3 or ay, 0.04, bev)
-        end
-        local a = pick.hang and 90 or deg(ax, ay)
-        event({ kind = "bloom", parent = bev, at = 1, size = pick.r(s) })
-        place(pick.layer, ox, oy, a, function() pick.draw(rng.fork(), s) end)
-        if pick.name == "flower" then blooms[#blooms + 1] = { ox, oy, s } end
+      local function origin(size)
+        if pick.hang then return px - dx * 0.2 * size, py + 0.45 * size end
+        return px - ax * pick.off(size), py - ay * pick.off(size)
       end
-      counts[pick.name] = counts[pick.name] + 1
-      disc(px, py, pick.r(s) * (2 - D), 0.85)
+      local extent = function(size) return motif_extent(pick, size) end
+      local ox, oy
+      s, ox, oy = fit_size(s, pick.smin, pick.fly and function() return px, py end or origin, extent)
+      if not s then
+        free[bi] = 0
+      else
+        nbranch = nbranch + 1
+        local bev = event({ kind = "stem", phase = "branch", i = nbranch })
+        overlay(bev, px, py, f, S)
+        if pick.fly then
+          local a = pick.name == "bee" and layout.range(0, 360) or 90 + layout.sym(50)
+          event({ kind = "bloom", parent = bev, at = 1, span = 1.2 })
+          place(pick.layer, px, py, a, function(p) pick.draw(rng.fork(), s, p) end,
+            arrive(px, py, a, 3, layout.range(0, 360), layout.sym(0.8)), nil, extent(s))
+        else
+          if dist(ox, oy, S[1], S[2]) > 0.12 then
+            branch_to(S, ox, oy, pick.hang and dx or ax, pick.hang and -0.3 or ay, 0.04, bev)
+          end
+          local a = pick.hang and 90 or deg(ax, ay)
+          event({ kind = "bloom", parent = bev, at = 1, size = pick.r(s) })
+          place(pick.layer, ox, oy, a, function() pick.draw(rng.fork(), s) end, nil, nil, extent(s))
+          if pick.name == "flower" then blooms[#blooms + 1] = { ox, oy, s } end
+        end
+        counts[pick.name] = counts[pick.name] + 1
+        disc(px, py, pick.r(s) * (2 - D), 0.85)
+      end
     end
   end
 
@@ -1023,7 +1124,7 @@ function M.page(g)
           place(L_BLOOM, bx, by, pa, function() ink.scale(ps) F.petal(rng.fork(), { tone = pt, heart = false }) end,
             function(e)
               return lerp(x0, bx, e) + sway * sin(2 * pi * e), lerp(y0, by, e * e * (3 - 2 * e)), pa - 140 * (1 - e)
-            end, 16)
+            end, 16, 1.1 * ps)
           disc(bx, by, 0.22, 1)
         end
       end
@@ -1056,23 +1157,30 @@ function M.page(g)
         local ls = min(0.75, f * 1.6)
         for k = -1, 1, 2 do
           local a = base + k * layout.range(20, 35)
-          place(L_LEAF, S[1], S[2], a, function() ink.scale(ls * layout.range(0.8, 1)) F.leaflet(rng.fork(), { bend = -k * 0.15 }) end)
+          place(L_LEAF, S[1], S[2], a, function() ink.scale(ls * layout.range(0.8, 1)) F.leaflet(rng.fork(), { bend = -k * 0.15 }) end,
+            nil, nil, ls)
         end
       elseif kind < 0.65 then
         local ox, oy = px - ax * f * 0.5, py - ay * f * 0.5
-        ink.layer(L_STEM)
-        ink.moveto(S[1], S[2]) ink.curveto(S[1] + S[3] * 0.15, S[2] + S[4] * 0.15, ox - ax * 0.1, oy - ay * 0.1, ox, oy)
-        ink.stroke(tone(0.1), 0.4)
-        place(L_BLOOM, ox, oy, deg(ax, ay), function() F.bud(rng.fork(), min(0.6, f * 1.7)) end)
+        local bs = min(0.6, f * 1.7)
+        if M.fits_region(rects, ox, oy, 1.1 * bs) then
+          ink.layer(L_STEM)
+          ink.moveto(S[1], S[2]) ink.curveto(S[1] + S[3] * 0.15, S[2] + S[4] * 0.15, ox - ax * 0.1, oy - ay * 0.1, ox, oy)
+          ink.stroke(tone(0.1), 0.4)
+          place(L_BLOOM, ox, oy, deg(ax, ay), function() F.bud(rng.fork(), bs) end, nil, nil, 1.1 * bs)
+        end
       else
         -- a small cluster of florets on hairline stalks
         local n = layout.int(2, 4)
         for k = 1, n do
           local qx, qy = px + layout.sym(f * 0.5), py + layout.sym(f * 0.5)
-          ink.layer(L_STEM)
-          ink.moveto(S[1], S[2]) ink.curveto(S[1] + S[3] * 0.1, S[2] + S[4] * 0.1, (S[1] + qx) / 2, (S[2] + qy) / 2 + 0.05, qx, qy)
-          ink.stroke(tone(0.12), 0.25, 0.9)
-          place(L_BLOOM, qx, qy, 90, function() F.floret(rng.fork(), min(0.11, f * 0.6) * layout.range(0.8, 1.1)) end)
+          local rs = min(0.11, f * 0.6) * layout.range(0.8, 1.1)
+          if M.fits_region(rects, qx, qy, 1.1 * rs) then
+            ink.layer(L_STEM)
+            ink.moveto(S[1], S[2]) ink.curveto(S[1] + S[3] * 0.1, S[2] + S[4] * 0.1, (S[1] + qx) / 2, (S[2] + qy) / 2 + 0.05, qx, qy)
+            ink.stroke(tone(0.12), 0.25, 0.9)
+            place(L_BLOOM, qx, qy, 90, function() F.floret(rng.fork(), rs) end, nil, nil, 1.1 * rs)
+          end
         end
       end
     elseif sd >= 0.75 and accents < 6 * D and f > 0.22 and px < g.colright then
