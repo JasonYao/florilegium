@@ -340,7 +340,7 @@ end
 -- proxy so far (free). disc(x, y, r, k) adds a proxy; free_at(x, y) reads it back.
 -- The lattice is global, so a disc only visits the cells near it.
 function M.field(rects)
-  local gx, gy, free, lat = {}, {}, {}, {}
+  local gx, gy, free, boundary, lat = {}, {}, {}, {}, {}
   local function key(ix, iy) return ix * 100000 + iy end
   for _, r in ipairs(rects) do
     for ix = floor(r[1] / GRID), floor(r[3] / GRID) do
@@ -351,7 +351,7 @@ function M.field(rects)
           local b = border(rects, x, y)
           if b > 0 then
             local i = #gx + 1
-            gx[i], gy[i], free[i] = x, y, b
+            gx[i], gy[i], free[i], boundary[i] = x, y, b, b
             lat[k] = i
           end
         end
@@ -380,6 +380,131 @@ function M.field(rects)
   function f.free_at(x, y)
     local i = lat[key(floor(x / GRID), floor(y / GRID))]
     return i and free[i] or -1
+  end
+  local function clear_segment(a, b, radius)
+    local n = max(1, math.ceil(dist(a[1], a[2], b[1], b[2]) / (GRID * 0.35)))
+    for k = 0, n do
+      local t = k / n
+      if not M.fits_region(rects, lerp(a[1], b[1], t), lerp(a[2], b[2], t), radius) then return false end
+    end
+    return true
+  end
+  function f.route_path(points, radius)
+    if #points < 2 then return points end
+    for i = 1, #points do
+      if not M.fits_region(rects, points[i][1], points[i][2], radius) then break end
+      if i == #points and clear_segment(points[i - 1], points[i], radius) then return points end
+      if i > 1 and not clear_segment(points[i - 1], points[i], radius) then break end
+    end
+
+    local function nearest(x, y, other)
+      local best, bi = math.huge, nil
+      f.each_near(x, y, 0.8, function(i)
+        if boundary[i] >= radius + EDGE_GAP and (not other or clear_segment(other, { gx[i], gy[i] }, radius)) then
+          local d = dist(x, y, gx[i], gy[i])
+          if d < best then best, bi = d, i end
+        end
+      end)
+      return bi
+    end
+    local start = nearest(points[1][1], points[1][2], points[1])
+    local finish = nearest(points[#points][1], points[#points][2], points[#points])
+    if not start or not finish then return nil end
+
+    local function point_path_distance(x, y)
+      local best = math.huge
+      for i = 2, #points do
+        best = min(best, segment_distance(x, y, points[i - 1], points[i]))
+      end
+      return best
+    end
+    local xmin, xmax, ymin, ymax = math.huge, -math.huge, math.huge, -math.huge
+    for _, p in ipairs(points) do
+      xmin, xmax, ymin, ymax = min(xmin, p[1]), max(xmax, p[1]), min(ymin, p[2]), max(ymax, p[2])
+    end
+    local span = max(xmax - xmin, ymax - ymin)
+    local margin = min(max(2, span * 0.2), 6)
+    xmin, xmax, ymin, ymax = xmin - margin, xmax + margin, ymin - margin, ymax + margin
+
+    local dirs = { { -1, -1 }, { 0, -1 }, { 1, -1 }, { -1, 0 }, { 1, 0 }, { -1, 1 }, { 0, 1 }, { 1, 1 } }
+    local function state(i, d) return (i - 1) * 9 + d + 1 end
+    local function point(i) return gx[i], gy[i] end
+    local heap, serial = {}, 0
+    local function push(s, score)
+      serial = serial + 1
+      local item = { s, score, serial }
+      local i = #heap + 1
+      while i > 1 do
+        local p = floor(i / 2)
+        if heap[p][2] < score or (heap[p][2] == score and heap[p][3] < serial) then break end
+        heap[i], i = heap[p], p
+      end
+      heap[i] = item
+    end
+    local function pop()
+      local first, last = heap[1], table.remove(heap)
+      if #heap > 0 then
+        local i = 1
+        while i * 2 <= #heap do
+          local c = i * 2
+          if c < #heap and (heap[c + 1][2] < heap[c][2]
+            or (heap[c + 1][2] == heap[c][2] and heap[c + 1][3] < heap[c][3])) then c = c + 1 end
+          if heap[c][2] > last[2] or (heap[c][2] == last[2] and heap[c][3] >= last[3]) then break end
+          heap[i], i = heap[c], c
+        end
+        heap[i] = last
+      end
+      return first
+    end
+    local initial = state(start, 0)
+    local score, came, closed = { [initial] = 0 }, {}, {}
+    push(initial, dist(gx[start], gy[start], gx[finish], gy[finish]) / GRID)
+    local goal
+    while #heap > 0 do
+      local current = pop()[1]
+      if not closed[current] then
+        local ci, cd = floor((current - 1) / 9) + 1, (current - 1) % 9
+        if ci == finish then goal = current break end
+        closed[current] = true
+        local x, y = point(ci)
+        local ix, iy = floor(x / GRID), floor(y / GRID)
+        for d, v in ipairs(dirs) do
+          local ni = lat[key(ix + v[1], iy + v[2])]
+          if ni and boundary[ni] >= radius + EDGE_GAP and not closed[state(ni, d)] then
+            local nx, ny = point(ni)
+            if nx >= xmin and nx <= xmax and ny >= ymin and ny <= ymax
+              and clear_segment({ x, y }, { nx, ny }, radius) then
+              local step = (v[1] == 0 or v[2] == 0) and 1 or sqrt(2)
+              local turn = cd ~= 0 and cd ~= d and 0.35 or 0
+              local deviation = point_path_distance(nx, ny) / GRID * 0.08
+              local ns = state(ni, d)
+              local candidate = score[current] + step + turn + deviation
+              if not score[ns] or candidate < score[ns] then
+                score[ns], came[ns] = candidate, current
+                push(ns, candidate + dist(nx, ny, gx[finish], gy[finish]) / GRID)
+              end
+            end
+          end
+        end
+      end
+    end
+    if not goal then return nil end
+    local route = {}
+    while goal do
+      local i = floor((goal - 1) / 9) + 1
+      route[#route + 1] = { gx[i], gy[i] }
+      goal = came[goal]
+    end
+    for i = 1, floor(#route / 2) do route[i], route[#route - i + 1] = route[#route - i + 1], route[i] end
+    local result = { points[1] }
+    for i = 1, #route do
+      local p = route[i]
+      if dist(result[#result][1], result[#result][2], p[1], p[2]) > GRID * 0.1 then result[#result + 1] = p end
+    end
+    local last = points[#points]
+    if dist(result[#result][1], result[#result][2], last[1], last[2]) > GRID * 0.1 then result[#result + 1] = last end
+    for i = 2, #result do if not clear_segment(result[i - 1], result[i], radius) then return nil end end
+    return result
   end
   return f
 end
