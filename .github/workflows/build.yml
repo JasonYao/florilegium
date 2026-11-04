@@ -101,7 +101,7 @@ jobs:
           cat > "build/regions-${CASE}.tex" <<EOF
           \def\regionfirstcase{${CASE}}
           \def\regionlastcase{${CASE}}
-          \def\regiontimingfile{build/region-times-${CASE}.tsv}
+          \def\regiontimingfile{region-times-${CASE}.tsv}
           \input{tests/regions.tex}
           EOF
       - name: build region case
@@ -115,7 +115,7 @@ jobs:
           if-no-files-found: error
           path: |
             regions-${{ matrix.case }}.pdf
-            build/region-times-${{ matrix.case }}.tsv
+            region-times-${{ matrix.case }}.tsv
 
   region-results:
     needs: [pdfs, region-cases]
