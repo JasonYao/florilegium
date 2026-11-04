@@ -41,8 +41,6 @@ jobs:
   # which read pgf's transform from its internal macros (florilegium.lua: sync_transform), so a
   # pgf that renamed them would fail here and not in someone's document.
   pdfs:
-    outputs:
-      test-artifact-url: ${{ steps.test-results.outputs.artifact-url }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -61,13 +59,6 @@ jobs:
             specimen-geometric.tex
             ornaments.tex
           latexmk_use_lualatex: true
-      - name: build region cases concurrently
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq poppler-utils > /dev/null
-          tools/build-region-matrix.sh
-      - name: render previews of every built PDF
-        run: tools/render-test-previews.sh
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: florilegium-pdfs
@@ -77,6 +68,83 @@ jobs:
             florilegium-grow.pdf
             showcase.pdf
             spread.pdf
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: build-test-pdfs
+          if-no-files-found: error
+          path: |
+            florilegium.pdf
+            florilegium-grow.pdf
+            showcase.pdf
+            spread.pdf
+            specimen.pdf
+            specimen-geometric.pdf
+            ornaments.pdf
+
+  region-cases:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        case: [1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: prepare case input
+        env:
+          CASE: ${{ matrix.case }}
+        run: |
+          mkdir -p build
+          cat > "build/regions-${CASE}.tex" <<EOF
+          \def\regionfirstcase{${CASE}}
+          \def\regionlastcase{${CASE}}
+          \def\regiontimingfile{build/region-times-${CASE}.tsv}
+          \input{tests/regions.tex}
+          EOF
+      - name: build region case
+        uses: xu-cheng/latex-action@6549dc21effb2730855a1281407ecfcececc6c1b # 4.1.0
+        with:
+          root_file: build/regions-${{ matrix.case }}.tex
+          latexmk_use_lualatex: true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: region-case-${{ matrix.case }}
+          if-no-files-found: error
+          path: |
+            regions-${{ matrix.case }}.pdf
+            build/region-times-${{ matrix.case }}.tsv
+
+  region-results:
+    needs: [pdfs, region-cases]
+    if: always()
+    runs-on: ubuntu-latest
+    outputs:
+      test-artifact-url: ${{ steps.test-results.outputs.artifact-url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.pdfs.result == 'success'
+        with:
+          name: build-test-pdfs
+          path: .
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.region-cases.result == 'success'
+        with:
+          pattern: region-case-*
+          path: build/region-cases
+          merge-multiple: true
+      - name: merge cases and render previews
+        if: needs.pdfs.result == 'success' && needs.region-cases.result == 'success'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq poppler-utils > /dev/null
+          tools/combine-region-matrix.sh
+          tools/render-test-previews.sh
       - id: test-results
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
@@ -99,11 +167,11 @@ jobs:
   # A branch push also posts the check results on its matching open pull request.
   # Only this job may write comments; build jobs remain read-only.
   pr-results:
-    needs: [lua, pdfs]
+    needs: [lua, pdfs, region-cases, region-results]
     if: always() && github.event_name == 'push' && github.ref_type == 'branch' && github.ref_name != 'main' && github.ref_name != 'core-patchset'
     runs-on: ubuntu-latest
     outputs:
-      test-artifact-url: ${{ needs.pdfs.outputs.test-artifact-url }}
+      test-artifact-url: ${{ needs.region-results.outputs.test-artifact-url }}
     permissions:
       contents: read
       issues: write
@@ -112,7 +180,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        if: needs.pdfs.result == 'success'
+        if: needs.region-results.result == 'success'
         with:
           name: build-test-results
           path: build/test-results
@@ -125,9 +193,9 @@ jobs:
           OWNER: ${{ github.repository_owner }}
           BRANCH: ${{ github.ref_name }}
           LUA_RESULT: ${{ needs.lua.result }}
-          PDF_RESULT: ${{ needs.pdfs.result }}
+          PDF_RESULT: ${{ needs.pdfs.result == 'success' && needs.region-cases.result == 'success' && needs.region-results.result == 'success' && 'success' || 'failure' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          TEST_ARTIFACT_URL: ${{ needs.pdfs.outputs.test-artifact-url }}
+          TEST_ARTIFACT_URL: ${{ needs.region-results.outputs.test-artifact-url }}
           TEST_RESULTS_DIR: build/test-results
         run: tools/comment-pr-results.sh
 
