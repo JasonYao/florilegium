@@ -37,6 +37,11 @@ specimen-geometric.pdf: specimen-geometric.tex florilegium.sty $(LUA)
 ornaments.pdf: ornaments.tex florilegium.sty $(LUA)
 	$(LUALATEX) ornaments.tex
 
+# rectangular and polygon region subtraction and masked growth
+regioncheck: tests/regions.tex florilegium.sty florilegium-grow.lua $(LUA)
+	mkdir -p build
+	$(LUALATEX) -output-directory=build tests/regions.tex
+
 # the grown document with the geometric and the math theme, for gallery/geometric.png
 # and gallery/math.png (its second page)
 build/geometric.pdf build/math.pdf: build/%.pdf: florilegium-grow.tex florilegium.sty florilegium-grow.lua $(LUA) text-methods.tex text-growth.tex text-sharing.tex
@@ -117,4 +122,4 @@ playground:
 clean:
 	rm -rf build *.aux *.log *.out *.synctex.gz
 
-.PHONY: all gallery animation preview postscript pscheck svg playground clean
+.PHONY: all gallery animation preview postscript pscheck regioncheck svg playground clean

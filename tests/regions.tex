@@ -1,0 +1,186 @@
+\documentclass[10pt]{article}
+\usepackage[letterpaper,left=15mm,right=45mm,top=15mm,bottom=15mm]{geometry}
+\pagestyle{empty}
+\def\florilegiumseed{24680}
+\usepackage[grown,density=0.4,intensity=0.8]{florilegium}
+\providecommand{\regionfirstcase}{1}
+\providecommand{\regionlastcase}{7}
+\providecommand{\regiontimingfile}{build/region-times.tsv}
+
+\directlua{
+  local growth = require("florilegium-grow")
+  local base = { { 0, 0, 10, 10 } }
+  local cases = {
+    { {}, 100 },
+    { { { 4, 4, 6, 6 } }, 96 },
+    { { { 2, 2, 4, 5 }, { 6, 3, 8, 7 } }, 86 },
+    { { { 2, 2, 6, 6 }, { 4, 4, 8, 8 } }, 72 },
+  }
+  for _, case in ipairs(cases) do
+    local regions = growth.subtract_regions(base, case[1])
+    local area = 0
+    for _, r in ipairs(regions) do
+      area = area + (r[3] - r[1]) * (r[4] - r[2])
+    end
+    assert(math.abs(area - case[2]) < 0.001, "region subtraction changed the allowed area")
+    for x = 0.1, 9.9, 0.2 do
+      for y = 0.1, 9.9, 0.2 do
+        local expected = true
+        for _, mask in ipairs(case[1]) do
+          if x > mask[1] and x < mask[3] and y > mask[2] and y < mask[4] then expected = false end
+        end
+        assert(growth.in_regions(regions, x, y) == expected, "region union does not match its masks")
+      end
+    end
+    local field = growth.field(regions)
+    for i, x in ipairs(field.x) do
+      assert(growth.in_regions(regions, x, field.y[i]), "growth field escaped its allowed regions")
+    end
+  end
+
+  local polygon = { { 2, 2 }, { 8, 2 }, { 8, 4 }, { 4, 4 }, { 4, 8 }, { 2, 8 } }
+  local polygon_regions = growth.subtract_regions(base, { polygon })
+  assert(not growth.in_regions(polygon_regions, 3, 6), "polygon mask did not exclude its vertical arm")
+  assert(not growth.in_regions(polygon_regions, 6, 3), "polygon mask did not exclude its horizontal arm")
+  assert(not growth.in_regions(polygon_regions, 4, 5), "polygon mask boundary should be excluded")
+  assert(growth.in_regions(polygon_regions, 5, 5), "concave polygon mask excluded its open notch")
+  assert(growth.fits_region(polygon_regions, 5, 5, 0.9), "a footprint should fit inside an open region")
+  assert(not growth.fits_region(polygon_regions, 3, 5, 0.2), "a footprint crossed a polygon boundary")
+  assert(not growth.fits_region(polygon_regions, 1, 5, 1.1), "a footprint crossed a rectangle boundary")
+  local disjoint_polygon = { { 7, 7 }, { 9, 7 }, { 9, 9 }, { 7, 9 } }
+  local disjoint_polygon_regions = growth.subtract_regions(polygon_regions, { disjoint_polygon })
+  assert(not growth.in_regions(disjoint_polygon_regions, 8, 8), "disjoint polygon mask was not excluded")
+  assert(growth.in_regions(disjoint_polygon_regions, 9.5, 9.5), "disjoint polygon mask excluded unrelated space")
+  local overlap = { { 4, 4 }, { 7, 4 }, { 7, 7 }, { 4, 7 } }
+  local overlapping_regions = growth.subtract_regions(polygon_regions, { overlap })
+  assert(not growth.in_regions(overlapping_regions, 5, 5), "intersecting polygon masks should exclude their union")
+  assert(growth.in_regions(polygon_regions, 5, 5), "adding a mask mutated its input regions")
+  local polygon_field = growth.field(polygon_regions)
+  assert(math.abs(polygon_field.free_at(4.1, 5.1) - 0.1) < 0.001, "polygon boundary did not constrain free space")
+  for i, x in ipairs(polygon_field.x) do
+    assert(growth.in_regions(polygon_regions, x, polygon_field.y[i]), "growth field entered a polygon mask")
+  end
+
+  local test_masks = {}
+  local function rectangle(cx, cy, hw, hh)
+    return { cx - hw, cy - hh, cx + hw, cy + hh }
+  end
+  local function octagon(cx, cy, rx, ry)
+    return {
+      { cx - 0.65 * rx, cy - ry }, { cx + 0.65 * rx, cy - ry },
+      { cx + rx, cy - 0.55 * ry }, { cx + rx, cy + 0.55 * ry },
+      { cx + 0.65 * rx, cy + ry }, { cx - 0.65 * rx, cy + ry },
+      { cx - rx, cy + 0.55 * ry }, { cx - rx, cy - 0.55 * ry },
+    }
+  end
+  local function complex_polygon(cx, cy)
+    local points = {}
+    for i = 1, 20 do
+      local angle = (i - 1) * math.pi / 10 - math.pi / 2
+      local radius = i == 2 * math.floor(i / 2) + 1 and 2.05 or 0.9
+      points[i] = { cx + radius * math.cos(angle), cy + 1.85 * radius / 2.05 * math.sin(angle) }
+    end
+    return points
+  end
+  local function salinon(cx, cy)
+    local points = {}
+    for i = 1, 128 do
+      local angle = (i - 1) * 2 * math.pi / 128
+      local cosine = math.cos(angle)
+      points[i] = {
+        cx + 2.3 * cosine,
+        cy + 1.75 * math.sin(angle) * (0.68 + 0.32 * cosine * cosine),
+      }
+    end
+    return points
+  end
+  florilegium_test_case = 1
+  growth.regions = function(g, layout)
+    g.colright = g.pw - 0.3
+    local row = { 0.3, 0.3, g.pw - 0.3, g.ph - 0.3 }
+    local center = g.pw * 0.5
+    local masks = {}
+    if florilegium_test_case == 1 then
+      masks = { rectangle(center, 2.875, 1.575, 1.575) }
+    elseif florilegium_test_case == 2 then
+      masks = {
+        rectangle(center - 1.1, 2.875, 0.7, 1.45),
+        rectangle(center + 1.1, 2.875, 0.7, 1.45),
+      }
+    elseif florilegium_test_case == 3 then
+      masks = {
+        rectangle(center - 0.65, 2.875, 1.1, 1.45),
+        rectangle(center + 0.65, 2.875, 1.1, 1.45),
+      }
+    elseif florilegium_test_case == 4 then
+      masks = { octagon(center, 2.875, 1.575, 1.575) }
+    elseif florilegium_test_case == 5 then
+      masks = {
+        octagon(center - 0.65, 2.875, 1.1, 1.45),
+        octagon(center + 0.65, 2.875, 1.1, 1.45),
+        octagon(center - 4.0, 2.875, 0.65, 0.85),
+      }
+    elseif florilegium_test_case == 6 then
+      masks = { complex_polygon(center, g.ph * 0.5) }
+    elseif florilegium_test_case == 7 then
+      masks = { salinon(center, g.ph * 0.5) }
+    end
+    test_masks = masks
+    local regions = growth.subtract_regions({ row }, masks)
+    local foot = { row[1], row[2], row[3], row[2] + 1.0 }
+    return regions, row, foot, nil, row[3], masks
+  end
+  florilegium.head = function(g)
+    local ink = require("florilegium-ink")
+    ink.set_transform(ink.page_transform(g.mirror and g.pw))
+    for _, mask in ipairs(test_masks) do
+      local points = type(mask[1]) == "number" and {
+        { mask[1], mask[2] }, { mask[3], mask[2] }, { mask[3], mask[4] }, { mask[1], mask[4] },
+      } or mask
+      ink.poly(points, true)
+      ink.fill({ 1, 0, 0 }, 0.7)
+    end
+    ink.flush()
+  end
+  local original_grown = florilegium.grown
+  local first_case = tonumber("\regionfirstcase")
+  local page = (first_case - 1) * 9
+  local timings = assert(io.open("\regiontimingfile", "w"))
+  timings:close()
+  florilegium.grown = function(...)
+    page = page + 1
+    local started = os.clock()
+    local result = original_grown(...)
+    local elapsed = os.clock() - started
+    local output = assert(io.open("\regiontimingfile", "a"))
+    output:write(page, string.char(9), tostring(math.floor(elapsed * 1000 + 0.5) / 1000), string.char(10))
+    output:close()
+    return result
+  end
+}
+
+\newcommand{\regioncasename}[1]{%
+  \ifcase#1\or Single rectangle\or Two disjoint rectangles\or Two overlapping rectangles%
+  \or Single polygon\or Multiple polygons\or Complex polygon\or Complex smooth polygon\fi}
+\newcommand{\regionlevelname}[1]{\ifcase#1\or Low\or Medium\or High\fi}
+\newcommand{\regionpage}[3]{%
+  \directlua{
+    florilegium_test_case = #1
+    florilegium.density = ({0.25, 0.55, 1})[#2]
+    florilegium.intensity = ({0.3, 0.65, 1})[#3]
+  }%
+  \noindent \regioncasename{#1}; density \regionlevelname{#2};
+  intensity \regionlevelname{#3}\newpage
+}
+
+\begin{document}
+\directlua{
+  for case = tonumber("\regionfirstcase"), tonumber("\regionlastcase") do
+    for density = 1, 3 do
+      for intensity = 1, 3 do
+        tex.sprint("\\regionpage{" .. case .. "}{" .. density .. "}{" .. intensity .. "}")
+      end
+    end
+  end
+}
+\end{document}
